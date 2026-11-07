@@ -1,6 +1,6 @@
 {
   "name": "qimu-workbench",
-  "version": "0.1.1",
+  "version": "0.1.7",
   "description": "栖木工作台 — 一个安静、本地优先的桌面效率空间",
   "main": "./out/main/index.js",
   "author": "Workbench",
@@ -44,17 +44,33 @@
       {
         "from": "resources/icon.png",
         "to": "icon.png"
+      },
+      {
+        "from": "resources/icon.ico",
+        "to": "icon.ico"
       }
     ],
     "win": {
       "icon": "resources/icon.ico",
       "target": "nsis"
     },
+    "fileAssociations": [
+      {
+        "ext": [
+          "md",
+          "markdown"
+        ],
+        "name": "Qimu.Workbench.Markdown",
+        "description": "Markdown 文档",
+        "icon": "icon.ico"
+      }
+    ],
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "shortcutName": "栖木工作台"
+      "shortcutName": "栖木工作台",
+      "include": "installer.nsh"
     },
     "electronDist": "node_modules/electron/dist"
   },

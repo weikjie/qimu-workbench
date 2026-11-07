@@ -181,6 +181,67 @@
   scrollbar-gutter: stable;
 }
 
+.note-rail__group + .note-rail__group {
+  margin-top: 10px;
+}
+
+.note-rail__group-label {
+  display: block;
+  padding: 4px 11px 5px;
+  color: var(--color-faint);
+  font-size: 8.5px;
+  font-weight: 680;
+  letter-spacing: 0.12em;
+}
+
+.note-rail-file {
+  position: relative;
+}
+
+.note-rail-file .note-rail-item {
+  padding-right: 30px;
+}
+
+.note-rail-item--file .note-rail-item__excerpt {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.note-rail-file__icon {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--color-accent);
+}
+
+.note-rail-file__close {
+  position: absolute;
+  top: 8px;
+  right: 7px;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-xs);
+  color: var(--color-faint);
+  opacity: 0;
+  transition:
+    color var(--transition-fast),
+    background var(--transition-fast),
+    opacity var(--transition-fast);
+}
+
+.note-rail-file:hover .note-rail-file__close,
+.note-rail-file__close:focus-visible {
+  opacity: 1;
+}
+
+.note-rail-file__close:hover {
+  color: var(--color-ink-soft);
+  background: var(--color-surface-muted);
+}
+
 .note-rail-item {
   position: relative;
   display: flex;
@@ -286,10 +347,38 @@
   align-items: center;
   justify-content: space-between;
   flex: 0 0 auto;
-  padding: 11px 16px;
+  gap: 8px;
+  padding: 9px 12px 9px 16px;
   border-top: 1px solid var(--color-border-subtle);
   color: var(--color-faint);
   font-size: 9px;
+}
+
+.note-rail__footer > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.note-rail__folder {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 4px;
+  height: 23px;
+  padding: 0 7px;
+  border-radius: var(--radius-xs);
+  color: var(--color-faint);
+  font-size: 9px;
+  white-space: nowrap;
+  transition:
+    color var(--transition-fast),
+    background var(--transition-fast);
+}
+
+.note-rail__folder:hover {
+  color: var(--color-accent-ink);
+  background: var(--color-surface-muted);
 }
 
 /* Document editor -------------------------------------------------------- */
@@ -353,10 +442,30 @@
   color: var(--color-faint);
 }
 
+.note-editor__file-title {
+  display: block;
+  overflow: hidden;
+  width: 100%;
+  height: 34px;
+  color: var(--color-ink);
+  font-size: 22px;
+  font-weight: 690;
+  letter-spacing: -0.03em;
+  line-height: 34px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .note-editor__meta {
   color: var(--color-faint);
   font-size: 9.5px;
   line-height: 1.4;
+}
+
+.note-editor__meta--path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .note-editor__actions {

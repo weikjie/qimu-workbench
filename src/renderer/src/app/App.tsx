@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { SectionId } from '@shared/types'
 import { Sidebar } from './Sidebar'
 import { TopBar } from './TopBar'
+import { useOpenFiles } from './OpenFilesProvider'
 import { useWorkspace } from './WorkspaceProvider'
 import { OverviewView } from '../features/overview/OverviewView'
 import { TodosView } from '../features/todos/TodosView'
@@ -24,10 +25,15 @@ function AppLoading(): React.JSX.Element {
 export function App(): React.JSX.Element {
   const [active, setActive] = useState<SectionId>('overview')
   const { ready, saveState, loadError } = useWorkspace()
+  const { activeFile, focusTick } = useOpenFiles()
 
   useEffect(() => {
     document.title = '栖木工作台'
   }, [])
+
+  useEffect(() => {
+    if (focusTick > 0) setActive('notes')
+  }, [focusTick])
 
   if (!ready) return <AppLoading />
 
@@ -35,7 +41,10 @@ export function App(): React.JSX.Element {
     <div className="app-shell">
       <Sidebar active={active} onNavigate={setActive} />
       <div className="app-main">
-        <TopBar section={active} saveState={saveState} />
+        <TopBar
+          section={active}
+          saveState={active === 'notes' && activeFile ? activeFile.saveState : saveState}
+        />
         <main
           className={
             active === 'notes' ? 'app-content app-content--fill app-content--editor' : 'app-content'

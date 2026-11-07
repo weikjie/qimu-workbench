@@ -1,12 +1,32 @@
-import { app, BrowserWindow, Menu, ipcMain } from 'electron'
+import { app, BrowserWindow, Menu, Tray, ipcMain, protocol, shell } from 'electron'
 import { join } from 'node:path'
 import { writeFile } from 'node:fs/promises'
 import { IPC } from '../shared/api'
+import { EXTERNAL_ASSET_SCHEME } from '../shared/assets'
 import { detectBrowsers, listBrowserInfo, openExternalUrl, openInBrowser } from './browsers'
-import { configureAppDataPaths } from './data-paths'
+import { configureAppDataPaths, getAppDataPaths } from './data-paths'
+import {
+  closeExternalDocument,
+  extractMarkdownPaths,
+  flushExternalDocumentsSync,
+  queueExternalMarkdown,
+  readExternalAsset,
+  saveExternalDocument,
+  takeExternalOpenRequests
+} from './external-files'
 import { flushWorkspaceSync, loadWorkspace, queueWorkspaceSave } from './store'
 
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: EXTERNAL_ASSET_SCHEME,
+    privileges: { standard: true, secure: true }
+  }
+])
+
 let mainWindow: BrowserWindow | null = null
+let tray: Tray | null = null
+let isQuitting = false
+const initialMarkdownPaths = extractMarkdownPaths(process.argv, process.cwd())
 
 // Must run before the single-instance lock and before Electron creates any
 // session storage, so dev and production get separate Chromium profiles.
@@ -21,12 +41,98 @@ function iconPath(): string {
   return app.isPackaged ? join(process.resourcesPath, 'icon.png') : join(__dirname, '../../resources/icon.png')
 }
 
+function trayIconPath(): string {
+  const fileName = process.platform === 'win32' ? 'icon.ico' : 'icon.png'
+  return app.isPackaged
+    ? join(process.resourcesPath, fileName)
+    : join(__dirname, '../../resources', fileName)
+}
+
+function showMainWindow(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    void createWindow()
+    return
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore()
+  mainWindow.show()
+  mainWindow.focus()
+}
+
+function createTray(): void {
+  if (tray) return
+  try {
+    tray = new Tray(trayIconPath())
+    tray.setToolTip('栖木工作台')
+    tray.setContextMenu(
+      Menu.buildFromTemplate([
+        { label: '打开栖木工作台', click: showMainWindow },
+        { type: 'separator' },
+        {
+          label: '退出',
+          click: () => {
+            isQuitting = true
+            app.quit()
+          }
+        }
+      ])
+    )
+    tray.on('click', showMainWindow)
+    tray.on('double-click', showMainWindow)
+  } catch (error) {
+    tray = null
+    console.error('[workbench] could not create tray icon:', error)
+  }
+}
+
 function isTrustedSender(event: Electron.IpcMainInvokeEvent): boolean {
   return Boolean(mainWindow && event.sender === mainWindow.webContents)
 }
 
 function isSafeString(value: unknown, maxLength = 4000): value is string {
   return typeof value === 'string' && value.length > 0 && value.length <= maxLength
+}
+
+function registerExternalAssetProtocol(): void {
+  protocol.handle(EXTERNAL_ASSET_SCHEME, async (request) => {
+    try {
+      const url = new URL(request.url)
+      if (url.hostname !== 'doc') return new Response(null, { status: 404 })
+
+      const documentId = decodeURIComponent(url.pathname.replace(/^\/+/, ''))
+      const source = url.searchParams.get('path')
+      if (!documentId || !source) return new Response(null, { status: 404 })
+
+      const asset = await readExternalAsset(documentId, source)
+      if (!asset) return new Response(null, { status: 404 })
+
+      // The asset buffer is a fresh, exact-length copy, so its ArrayBuffer can
+      // be handed to Response directly.
+      return new Response(asset.data.buffer as ArrayBuffer, {
+        status: 200,
+        headers: {
+          'content-type': asset.contentType,
+          'cache-control': 'no-store',
+          'x-content-type-options': 'nosniff'
+        }
+      })
+    } catch (error) {
+      console.warn('[workbench] image protocol request failed:', error)
+      return new Response(null, { status: 400 })
+    }
+  })
+}
+
+function notifyExternalFilesAvailable(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  mainWindow.webContents.send(IPC.externalFilesAvailable)
+}
+
+async function acceptMarkdownFiles(paths: readonly string[]): Promise<void> {
+  if (paths.length === 0) return
+  for (const filePath of paths) {
+    await queueExternalMarkdown(filePath)
+  }
+  notifyExternalFilesAvailable()
 }
 
 async function captureForQa(window: BrowserWindow): Promise<void> {
@@ -77,6 +183,12 @@ async function createWindow(): Promise<void> {
 
   mainWindow.once('ready-to-show', () => {
     mainWindow?.show()
+  })
+
+  mainWindow.on('close', (event) => {
+    if (isQuitting || !tray) return
+    event.preventDefault()
+    mainWindow?.hide()
   })
 
   mainWindow.on('closed', () => {
@@ -131,6 +243,12 @@ function registerIpc(): void {
     return listBrowserInfo()
   })
 
+  ipcMain.handle(IPC.openNotesFolder, async (event) => {
+    if (!isTrustedSender(event)) throw new Error('Untrusted sender')
+    const message = await shell.openPath(getAppDataPaths().notesDir)
+    return message ? { ok: false, message: `无法打开笔记文件夹：${message}` } : { ok: true }
+  })
+
   ipcMain.handle(IPC.openLink, async (event, payload: unknown) => {
     if (!isTrustedSender(event)) throw new Error('Untrusted sender')
     const input = typeof payload === 'object' && payload !== null ? (payload as Record<string, unknown>) : {}
@@ -144,6 +262,43 @@ function registerIpc(): void {
     if (!isSafeString(url)) return { ok: false, message: '链接地址不能为空。' }
     return openExternalUrl(url)
   })
+
+  ipcMain.handle(IPC.takeExternalFiles, async (event) => {
+    if (!isTrustedSender(event)) throw new Error('Untrusted sender')
+    return takeExternalOpenRequests()
+  })
+
+  ipcMain.handle(IPC.saveExternalFile, async (event, payload: unknown) => {
+    if (!isTrustedSender(event)) throw new Error('Untrusted sender')
+    const input = typeof payload === 'object' && payload !== null ? (payload as Record<string, unknown>) : {}
+    if (!isSafeString(input['id'], 100)) {
+      return { ok: false, message: '文件标识无效。' }
+    }
+    if (typeof input['content'] !== 'string') {
+      return { ok: false, message: '文件内容无效。' }
+    }
+    return saveExternalDocument(input['id'], input['content'])
+  })
+
+  ipcMain.on(IPC.closeExternalFile, (event, id: unknown) => {
+    if (!isTrustedSender(event) || !isSafeString(id, 100)) return
+    closeExternalDocument(id)
+  })
+
+  ipcMain.on(IPC.flushExternalFiles, (event, inputs: unknown) => {
+    if (isTrustedSender(event) && Array.isArray(inputs)) {
+      flushExternalDocumentsSync(
+        inputs.filter(
+          (input): input is { id: string; content: string } =>
+            typeof input === 'object' &&
+            input !== null &&
+            typeof (input as Record<string, unknown>)['id'] === 'string' &&
+            typeof (input as Record<string, unknown>)['content'] === 'string'
+        )
+      )
+    }
+    event.returnValue = true
+  })
 }
 
 app.whenReady().then(async () => {
@@ -151,25 +306,41 @@ app.whenReady().then(async () => {
 
   app.setAppUserModelId('com.qimu.workbench')
   Menu.setApplicationMenu(null)
+  registerExternalAssetProtocol()
   await detectBrowsers()
   registerIpc()
+  createTray()
   await createWindow()
 
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      void createWindow()
-    }
-  })
+  if (initialMarkdownPaths.length > 0) {
+    void acceptMarkdownFiles(initialMarkdownPaths)
+  }
+
+  app.on('activate', showMainWindow)
 })
 
-app.on('second-instance', () => {
-  if (!mainWindow) return
-  if (mainWindow.isMinimized()) mainWindow.restore()
-  mainWindow.focus()
+app.on('before-quit', () => {
+  isQuitting = true
 })
 
+app.on('second-instance', (_event, commandLine, workingDirectory) => {
+  showMainWindow()
+  const paths = extractMarkdownPaths(commandLine, workingDirectory)
+  void acceptMarkdownFiles(paths)
+})
+
+// macOS delivers file associations through open-file instead of argv.
+app.on('open-file', (event, filePath) => {
+  event.preventDefault()
+  const paths = extractMarkdownPaths([filePath], process.cwd())
+  void acceptMarkdownFiles(paths)
+})
+
+// The tray keeps the workspace alive after its window is hidden. A real quit
+// only happens from the tray menu (or the operating system). If the tray could
+// not be created, fall back to the normal quit behavior.
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit()
+  if (!tray && process.platform !== 'darwin') app.quit()
 })
 
 app.on('web-contents-created', (_event, contents) => {

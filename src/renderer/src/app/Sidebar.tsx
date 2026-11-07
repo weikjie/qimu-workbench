@@ -1,6 +1,7 @@
 import { FileText, LayoutDashboard, Link2, ListChecks } from 'lucide-react'
 import type { SectionId } from '@shared/types'
 import { useTheme } from '../theme/ThemeProvider'
+import { useOpenFiles } from './OpenFilesProvider'
 import { useWorkspace } from './WorkspaceProvider'
 import { cn } from '../lib/cn'
 import { BrandMark } from '../components/layout/BrandMark'
@@ -19,13 +20,14 @@ interface SidebarProps {
 
 export function Sidebar({ active, onNavigate }: SidebarProps): React.JSX.Element {
   const { data } = useWorkspace()
+  const { files } = useOpenFiles()
   const { theme } = useTheme()
   const pendingTodos = data.todos.filter((todo) => !todo.done).length
 
   const count = (id: SectionId): number | null => {
     if (id === 'todos') return pendingTodos
     if (id === 'links') return data.links.length
-    if (id === 'notes') return data.notes.length
+    if (id === 'notes') return data.notes.length + files.length
     return null
   }
 
@@ -78,7 +80,7 @@ export function Sidebar({ active, onNavigate }: SidebarProps): React.JSX.Element
             <span className="sidebar__theme-swatch" aria-hidden="true" />
             {theme.label}
           </span>
-          <span>v0.1.1</span>
+          <span>v0.1.7</span>
         </div>
       </div>
     </aside>

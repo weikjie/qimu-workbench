@@ -1,4 +1,11 @@
-import type { BrowserInfo, OpenResult, WorkspaceData } from '@shared/types'
+import type {
+  BrowserInfo,
+  ExternalFileFlushInput,
+  ExternalFileOpenRequest,
+  ExternalFileSaveResult,
+  OpenResult,
+  WorkspaceData
+} from '@shared/types'
 
 /**
  * The only place in the renderer that talks to Electron. Feature modules use
@@ -24,10 +31,28 @@ export const desktop = {
   listBrowsers(): Promise<BrowserInfo[]> {
     return bridge().browsers.list()
   },
+  openNotesFolder(): Promise<OpenResult> {
+    return bridge().notes.openFolder()
+  },
   openLink(url: string, browserId: string | null): Promise<OpenResult> {
     return bridge().open.link(url, browserId)
   },
   openExternal(url: string): Promise<OpenResult> {
     return bridge().open.external(url)
+  },
+  takeOpenFileRequests(): Promise<ExternalFileOpenRequest[]> {
+    return bridge().files.takeOpenRequests()
+  },
+  saveOpenFile(id: string, content: string): Promise<ExternalFileSaveResult> {
+    return bridge().files.save(id, content)
+  },
+  closeOpenFile(id: string): void {
+    bridge().files.close(id)
+  },
+  flushOpenFiles(inputs: ExternalFileFlushInput[]): void {
+    bridge().files.flush(inputs)
+  },
+  onOpenFilesAvailable(callback: () => void): () => void {
+    return bridge().files.onOpenAvailable(callback)
   }
 }

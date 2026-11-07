@@ -200,8 +200,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }): React.
         console.error('Unable to flush workspace:', error)
       }
     }
+    // beforeunload is the reliable path when the Electron window is closed
+    // from the title bar; pagehide covers renderer teardown and navigation.
+    window.addEventListener('beforeunload', flush)
     window.addEventListener('pagehide', flush)
-    return () => window.removeEventListener('pagehide', flush)
+    return () => {
+      window.removeEventListener('beforeunload', flush)
+      window.removeEventListener('pagehide', flush)
+    }
   }, [])
 
   const saveNow = useCallback(async (): Promise<void> => {

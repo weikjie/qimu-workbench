@@ -9,6 +9,7 @@ import './app/app.css'
 import { ThemeProvider } from './theme/ThemeProvider'
 import { ToastProvider } from './components/ui/Toast'
 import { WorkspaceProvider } from './app/WorkspaceProvider'
+import { OpenFilesProvider } from './app/OpenFilesProvider'
 import { App } from './app/App'
 
 const container = document.getElementById('root')
@@ -19,7 +20,9 @@ createRoot(container).render(
     <ThemeProvider>
       <WorkspaceProvider>
         <ToastProvider>
-          <App />
+          <OpenFilesProvider>
+            <App />
+          </OpenFilesProvider>
         </ToastProvider>
       </WorkspaceProvider>
     </ThemeProvider>

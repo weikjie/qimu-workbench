@@ -4,15 +4,19 @@ import {
   Columns2,
   Eye,
   FileText,
+  FolderOpen,
   LoaderCircle,
   PanelLeftClose,
   PanelLeftOpen,
   PencilLine,
   Plus,
   Search,
-  Trash2
+  Trash2,
+  X
 } from 'lucide-react'
+import { createExternalAssetUrl } from '@shared/assets'
 import type { MarkdownNote } from '@shared/types'
+import { useOpenFiles } from '../../app/OpenFilesProvider'
 import { useWorkspace } from '../../app/WorkspaceProvider'
 import { Button } from '../../components/ui/Button'
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
@@ -46,6 +50,15 @@ const MODE_OPTIONS: ReadonlyArray<SegmentedOption<EditorMode>> = [
 
 export function NotesView(): React.JSX.Element {
   const { data, saveState, addNote, updateNote, removeNote, saveNow } = useWorkspace()
+  const {
+    files: openFiles,
+    activeFile,
+    activeFileId,
+    selectFile,
+    updateFileContent,
+    saveFile,
+    closeFile
+  } = useOpenFiles()
   const { notify } = useToast()
   const [activeId, setActiveId] = useState<string | null>(null)
   const [search, setSearch] = useState('')
@@ -70,6 +83,17 @@ export function NotesView(): React.JSX.Element {
     )
   }, [search, sortedNotes])
 
+  const filteredOpenFiles = useMemo(() => {
+    const query = search.trim().toLowerCase()
+    if (!query) return openFiles
+    return openFiles.filter(
+      (file) =>
+        file.name.toLowerCase().includes(query) ||
+        file.path.toLowerCase().includes(query) ||
+        file.content.toLowerCase().includes(query)
+    )
+  }, [openFiles, search])
+
   useEffect(() => {
     if (sortedNotes.length === 0) {
       if (activeId !== null) setActiveId(null)
@@ -91,14 +115,48 @@ export function NotesView(): React.JSX.Element {
   }, [activeId])
 
   const activeNote = data.notes.find((note) => note.id === activeId) ?? sortedNotes[0] ?? null
-  const deferredContent = useDeferredValue(activeNote?.content ?? '')
-  const previewHtml = useMemo(() => renderMarkdown(deferredContent), [deferredContent])
-  const characterCount = countCharacters(activeNote?.content ?? '')
-  const lineCount = activeNote?.content ? activeNote.content.split('\n').length : 0
+  const currentContent = activeFile?.content ?? activeNote?.content ?? ''
+  const previewFileId = activeFile?.id ?? null
+
+  // Closing the last visible document should fall back to another open file
+  // when the note library itself is empty.
+  useEffect(() => {
+    if (activeFileId || openFiles.length === 0 || activeNote) return
+    selectFile(openFiles[0]?.id ?? null)
+  }, [activeFileId, openFiles, activeNote, selectFile])
+
+  const deferredContent = useDeferredValue(currentContent)
+  const previewHtml = useMemo(
+    () =>
+      renderMarkdown(
+        deferredContent,
+        previewFileId
+          ? { resolveImageSource: (source) => createExternalAssetUrl(previewFileId, source) }
+          : undefined
+      ),
+    [deferredContent, previewFileId]
+  )
+  const characterCount = countCharacters(currentContent)
+  const lineCount = currentContent ? currentContent.split('\n').length : 0
+  const currentSaveState = activeFile?.saveState ?? saveState
 
   function selectNote(noteId: string): void {
+    selectFile(null)
     setActiveId(noteId)
     selectionRef.current = { start: 0, end: 0 }
+  }
+
+  function selectOpenFile(fileId: string): void {
+    selectFile(fileId)
+    selectionRef.current = { start: 0, end: 0 }
+  }
+
+  function commitContent(next: string): void {
+    if (activeFile) {
+      updateFileContent(activeFile.id, next)
+    } else if (activeNote) {
+      updateNote(activeNote.id, { content: next })
+    }
   }
 
   function toggleRail(): void {
@@ -113,6 +171,7 @@ export function NotesView(): React.JSX.Element {
 
   function createNote(): void {
     const id = addNote()
+    selectFile(null)
     setSearch('')
     setActiveId(id)
     setMode('edit')
@@ -126,15 +185,15 @@ export function NotesView(): React.JSX.Element {
   }
 
   function applyWrap(before: string, after: string, placeholder: string): void {
-    if (!activeNote) return
-    const content = activeNote.content
+    if (!activeFile && !activeNote) return
+    const content = currentContent
     const textarea = textareaRef.current
     const start = Math.min(textarea?.selectionStart ?? selectionRef.current.start, content.length)
     const end = Math.min(textarea?.selectionEnd ?? selectionRef.current.end, content.length)
     const selected = content.slice(start, end)
     const inner = selected || placeholder
     const next = `${content.slice(0, start)}${before}${inner}${after}${content.slice(end)}`
-    updateNote(activeNote.id, { content: next })
+    commitContent(next)
     const nextStart = start + before.length
     const nextEnd = nextStart + inner.length
     selectionRef.current = { start: nextStart, end: nextEnd }
@@ -147,8 +206,8 @@ export function NotesView(): React.JSX.Element {
   }
 
   function applyPrefix(prefix: string): void {
-    if (!activeNote) return
-    const content = activeNote.content
+    if (!activeFile && !activeNote) return
+    const content = currentContent
     const textarea = textareaRef.current
     const start = Math.min(textarea?.selectionStart ?? selectionRef.current.start, content.length)
     const end = Math.min(textarea?.selectionEnd ?? selectionRef.current.end, content.length)
@@ -162,7 +221,7 @@ export function NotesView(): React.JSX.Element {
       .map((line) => (line.startsWith(prefix) ? line : `${prefix}${line}`))
       .join('\n')
     const next = `${content.slice(0, lineStart)}${updatedSegment}${content.slice(lineEnd)}`
-    updateNote(activeNote.id, { content: next })
+    commitContent(next)
     const nextStart = start + prefix.length
     const nextEnd = end + prefix.length * lineCountInSelection
     selectionRef.current = { start: nextStart, end: nextEnd }
@@ -175,13 +234,13 @@ export function NotesView(): React.JSX.Element {
   }
 
   function insertTab(): void {
-    if (!activeNote) return
-    const content = activeNote.content
+    if (!activeFile && !activeNote) return
+    const content = currentContent
     const textarea = textareaRef.current
     const start = textarea?.selectionStart ?? content.length
     const end = textarea?.selectionEnd ?? content.length
     const next = `${content.slice(0, start)}  ${content.slice(end)}`
-    updateNote(activeNote.id, { content: next })
+    commitContent(next)
     const position = start + 2
     selectionRef.current = { start: position, end: position }
     window.requestAnimationFrame(() => {
@@ -194,7 +253,11 @@ export function NotesView(): React.JSX.Element {
   function handleEditorKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>): void {
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
       event.preventDefault()
-      void saveNow()
+      if (activeFile) {
+        void saveFile(activeFile.id)
+      } else {
+        void saveNow()
+      }
       return
     }
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'b') {
@@ -233,9 +296,15 @@ export function NotesView(): React.JSX.Element {
     notify('笔记已删除', 'success')
   }
 
+  function openNotesFolder(): void {
+    void desktop.openNotesFolder().then((result) => {
+      if (!result.ok) notify(result.message ?? '暂时无法打开笔记文件夹。', 'error')
+    })
+  }
+
   return (
     <div className="notes-page">
-      {data.notes.length === 0 ? (
+      {data.notes.length === 0 && openFiles.length === 0 ? (
         <div className="notes-empty-screen">
           <EmptyState
             icon={<FileText size={25} strokeWidth={1.65} />}
@@ -250,11 +319,11 @@ export function NotesView(): React.JSX.Element {
         </div>
       ) : (
         <div className={`notes-workbench${railCollapsed ? ' is-rail-collapsed' : ''}`}>
-          <aside className="note-rail" aria-label="笔记列表" aria-hidden={railCollapsed}>
+          <aside className="note-rail" aria-label="笔记与文件列表" aria-hidden={railCollapsed}>
             <div className="note-rail__top">
               <div className="note-rail__heading">
                 <span className="note-rail__name">笔记库</span>
-                <span className="note-rail__count">{data.notes.length}</span>
+                <span className="note-rail__count">{data.notes.length + openFiles.length}</span>
               </div>
               <IconButton
                 label="收起笔记列表"
@@ -267,8 +336,8 @@ export function NotesView(): React.JSX.Element {
               <Search size={14} className="note-rail__search-icon" aria-hidden="true" />
               <input
                 value={search}
-                placeholder="搜索笔记…"
-                aria-label="搜索笔记"
+                placeholder="搜索笔记与文件…"
+                aria-label="搜索笔记与文件"
                 onChange={(event) => setSearch(event.target.value)}
               />
               {search ? (
@@ -283,44 +352,119 @@ export function NotesView(): React.JSX.Element {
               ) : null}
             </div>
 
-            <div className="note-rail__list" role="list" aria-label="笔记列表">
+            <div className="note-rail__list" role="list" aria-label="笔记与文件列表">
+              {filteredOpenFiles.length > 0 ? (
+                <div className="note-rail__group">
+                  <span className="note-rail__group-label">已打开的文件</span>
+                  {filteredOpenFiles.map((file) => (
+                    <div
+                      key={file.id}
+                      className={`note-rail-file${activeFileId === file.id ? ' is-active' : ''}`}
+                    >
+                      <button
+                        type="button"
+                        role="listitem"
+                        className={`note-rail-item note-rail-item--file${
+                          activeFileId === file.id ? ' is-active' : ''
+                        }`}
+                        title={file.path}
+                        onClick={() => selectOpenFile(file.id)}
+                      >
+                        <span className="note-rail-item__title-row">
+                          <FileText
+                            size={12}
+                            strokeWidth={1.8}
+                            className="note-rail-file__icon"
+                            aria-hidden="true"
+                          />
+                          <span className="note-rail-item__title">{file.name}</span>
+                          <span className="note-rail-item__time">
+                            {file.saveState === 'saving'
+                              ? '写入中'
+                              : file.saveState === 'error'
+                                ? '保存失败'
+                                : '本地文件'}
+                          </span>
+                        </span>
+                        <span className="note-rail-item__excerpt">{file.path}</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="note-rail-file__close"
+                        aria-label={`关闭 ${file.name}`}
+                        title="关闭文件"
+                        onClick={() => void closeFile(file.id)}
+                      >
+                        <X size={12} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+
               {filteredNotes.length > 0 ? (
-                filteredNotes.map((note) => (
-                  <button
-                    key={note.id}
-                    type="button"
-                    role="listitem"
-                    className={`note-rail-item${activeNote?.id === note.id ? ' is-active' : ''}`}
-                    onClick={() => selectNote(note.id)}
-                  >
-                    <span className="note-rail-item__title-row">
-                      <span className="note-rail-item__title">{note.title || '无标题笔记'}</span>
-                      <span className="note-rail-item__time">{formatRelativeTime(note.updatedAt)}</span>
-                    </span>
-                    <span className="note-rail-item__excerpt">
-                      {getExcerpt(note.content, 78) || '空白笔记'}
-                    </span>
-                  </button>
-                ))
-              ) : (
+                <div className="note-rail__group">
+                  {openFiles.length > 0 ? <span className="note-rail__group-label">笔记</span> : null}
+                  {filteredNotes.map((note) => (
+                    <button
+                      key={note.id}
+                      type="button"
+                      role="listitem"
+                      className={`note-rail-item${
+                        !activeFile && activeNote?.id === note.id ? ' is-active' : ''
+                      }`}
+                      onClick={() => selectNote(note.id)}
+                    >
+                      <span className="note-rail-item__title-row">
+                        <span className="note-rail-item__title">{note.title || '无标题笔记'}</span>
+                        <span className="note-rail-item__time">
+                          {formatRelativeTime(note.updatedAt)}
+                        </span>
+                      </span>
+                      <span className="note-rail-item__excerpt">
+                        {getExcerpt(note.content, 78) || '空白笔记'}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+
+              {filteredOpenFiles.length === 0 && filteredNotes.length === 0 ? (
                 <div className="note-rail__empty">
                   <Search size={19} strokeWidth={1.6} />
-                  <p>没有找到相关笔记</p>
-                  <button type="button" onClick={() => setSearch('')}>
-                    清空搜索
-                  </button>
+                  <p>{search ? '没有找到相关内容' : '还没有笔记'}</p>
+                  {search ? (
+                    <button type="button" onClick={() => setSearch('')}>
+                      清空搜索
+                    </button>
+                  ) : (
+                    <button type="button" onClick={createNote}>
+                      新建笔记
+                    </button>
+                  )}
                 </div>
-              )}
+              ) : null}
             </div>
 
             <div className="note-rail__footer">
-              <span>{filteredNotes.length} 篇笔记</span>
-              <span>按最近编辑</span>
+              <span>
+                {data.notes.length} 篇笔记
+                {openFiles.length > 0 ? ` · ${openFiles.length} 个文件` : ''}
+              </span>
+              <button
+                type="button"
+                className="note-rail__folder"
+                title="打开笔记文件夹"
+                onClick={openNotesFolder}
+              >
+                <FolderOpen size={11} aria-hidden="true" />
+                笔记文件夹
+              </button>
             </div>
           </aside>
 
           <section className="note-editor">
-            {activeNote ? (
+            {activeFile || activeNote ? (
               <>
                 <header className="note-editor__header">
                   <div className="note-editor__heading">
@@ -332,20 +476,29 @@ export function NotesView(): React.JSX.Element {
                         onClick={toggleRail}
                       />
                     ) : null}
-                    <div className="note-editor__title-wrap">
-                      <input
-                        ref={titleRef}
-                        value={activeNote.title}
-                        maxLength={300}
-                        className="note-editor__title"
-                        placeholder="无标题笔记"
-                        aria-label="笔记标题"
-                        onChange={(event) => updateNote(activeNote.id, { title: event.target.value })}
-                      />
-                      <span className="note-editor__meta">
-                        编辑于 {formatRelativeTime(activeNote.updatedAt)}
-                      </span>
-                    </div>
+                    {activeFile ? (
+                      <div className="note-editor__title-wrap" title={activeFile.path}>
+                        <span className="note-editor__file-title">{activeFile.name}</span>
+                        <span className="note-editor__meta note-editor__meta--path">
+                          {activeFile.path}
+                        </span>
+                      </div>
+                    ) : activeNote ? (
+                      <div className="note-editor__title-wrap">
+                        <input
+                          ref={titleRef}
+                          value={activeNote.title}
+                          maxLength={300}
+                          className="note-editor__title"
+                          placeholder="无标题笔记"
+                          aria-label="笔记标题"
+                          onChange={(event) => updateNote(activeNote.id, { title: event.target.value })}
+                        />
+                        <span className="note-editor__meta">
+                          编辑于 {formatRelativeTime(activeNote.updatedAt)}
+                        </span>
+                      </div>
+                    ) : null}
                   </div>
                   <div className="note-editor__actions">
                     <IconButton
@@ -354,12 +507,20 @@ export function NotesView(): React.JSX.Element {
                       variant="soft"
                       onClick={createNote}
                     />
-                    <IconButton
-                      label="删除这篇笔记"
-                      icon={<Trash2 size={15} />}
-                      variant="danger"
-                      onClick={() => setDeleteTarget(activeNote)}
-                    />
+                    {activeFile ? (
+                      <IconButton
+                        label="关闭文件"
+                        icon={<X size={16} />}
+                        onClick={() => void closeFile(activeFile.id)}
+                      />
+                    ) : activeNote ? (
+                      <IconButton
+                        label="删除这篇笔记"
+                        icon={<Trash2 size={15} />}
+                        variant="danger"
+                        onClick={() => setDeleteTarget(activeNote)}
+                      />
+                    ) : null}
                   </div>
                 </header>
 
@@ -383,7 +544,7 @@ export function NotesView(): React.JSX.Element {
                     <div className="editor-pane">
                       <textarea
                         ref={textareaRef}
-                        value={activeNote.content}
+                        value={currentContent}
                         className="note-textarea"
                         placeholder="从这里开始书写…&#10;&#10;支持 Markdown：用 # 写标题，用 - 写列表，用 > 引用一段话。"
                         aria-label="Markdown 内容"
@@ -392,7 +553,7 @@ export function NotesView(): React.JSX.Element {
                         onClick={rememberSelection}
                         onKeyUp={rememberSelection}
                         onChange={(event) => {
-                          updateNote(activeNote.id, { content: event.target.value })
+                          commitContent(event.target.value)
                           rememberSelection()
                         }}
                         onKeyDown={handleEditorKeyDown}
@@ -424,21 +585,21 @@ export function NotesView(): React.JSX.Element {
                   <span>{lineCount} 行</span>
                   <span className="note-editor__footer-spacer" />
                   <span
-                    className={`note-save-state note-save-state--${saveState}`}
+                    className={`note-save-state note-save-state--${currentSaveState}`}
                     aria-live="polite"
                   >
-                    {saveState === 'saving' ? (
+                    {currentSaveState === 'saving' ? (
                       <LoaderCircle size={12} className="spin" />
-                    ) : saveState === 'error' ? (
+                    ) : currentSaveState === 'error' ? (
                       <span className="note-save-state__dot is-error" />
                     ) : (
                       <Check size={12} />
                     )}
-                    {saveState === 'saving'
-                      ? '保存中'
-                      : saveState === 'error'
+                    {currentSaveState === 'saving'
+                      ? '写入文件'
+                      : currentSaveState === 'error'
                         ? '保存失败'
-                        : '已自动保存'}
+                        : '已保存到文件'}
                   </span>
                   <span className="note-editor__footer-dot">·</span>
                   <span className="note-editor__shortcut">

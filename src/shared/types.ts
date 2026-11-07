@@ -43,4 +43,28 @@ export interface OpenResult {
   message?: string
 }
 
+/** A Markdown document opened from Windows (or the command line). */
+export interface ExternalMarkdownDocument {
+  id: string
+  /** File name including the extension. */
+  name: string
+  /** Absolute path, shown in the editor for context. */
+  path: string
+  content: string
+  modifiedAt: string
+}
+
+export type ExternalFileOpenRequest =
+  | { ok: true; document: ExternalMarkdownDocument }
+  | { ok: false; message: string }
+
+export interface ExternalFileSaveResult extends OpenResult {
+  modifiedAt?: string
+}
+
+export interface ExternalFileFlushInput {
+  id: string
+  content: string
+}
+
 export type SaveState = 'loading' | 'saving' | 'saved' | 'error'
