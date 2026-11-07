@@ -1,0 +1,37 @@
+/* Shared brand tones for quick-link tiles. */
+
+[data-tone="0"] {
+  --tile-from: #687b9f;
+  --tile-to: #485a7b;
+  --tile-soft: #edf1f7;
+}
+
+[data-tone="1"] {
+  --tile-from: #9b7d62;
+  --tile-to: #775b44;
+  --tile-soft: #f6f0e9;
+}
+
+[data-tone="2"] {
+  --tile-from: #5f8b7f;
+  --tile-to: #426a5e;
+  --tile-soft: #edf4f1;
+}
+
+[data-tone="3"] {
+  --tile-from: #9a7281;
+  --tile-to: #76525f;
+  --tile-soft: #f6eef1;
+}
+
+[data-tone="4"] {
+  --tile-from: #7f8a68;
+  --tile-to: #5d684b;
+  --tile-soft: #f1f3eb;
+}
+
+[data-tone="5"] {
+  --tile-from: #738293;
+  --tile-to: #536170;
+  --tile-soft: #eef1f4;
+}

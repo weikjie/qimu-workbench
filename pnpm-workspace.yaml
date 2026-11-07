@@ -1,0 +1,8 @@
+packages:
+  - "."
+
+# Electron's postinstall downloads the runtime binary. Registering the build
+# explicitly keeps pnpm 12 from refusing the install.
+allowBuilds:
+  electron: true
+  electron-winstaller: false
