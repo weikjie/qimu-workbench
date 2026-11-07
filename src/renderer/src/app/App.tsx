@@ -36,14 +36,23 @@ export function App(): React.JSX.Element {
       <Sidebar active={active} onNavigate={setActive} />
       <div className="app-main">
         <TopBar section={active} saveState={saveState} />
-        <main className={active === 'notes' ? 'app-content app-content--fill' : 'app-content'}>
+        <main
+          className={
+            active === 'notes' ? 'app-content app-content--fill app-content--editor' : 'app-content'
+          }
+        >
           {loadError ? (
             <div className="app-error" role="alert">
               <strong>本地数据暂时无法读取</strong>
               <span>{loadError}。你仍可以继续操作，本次更改可能无法保存。</span>
             </div>
           ) : null}
-          <div key={active} className={active === 'notes' ? 'view-page view-page--fill' : 'view-page'}>
+          <div
+            key={active}
+            className={
+              active === 'notes' ? 'view-page view-page--fill view-page--editor' : 'view-page'
+            }
+          >
             {active === 'overview' ? <OverviewView onNavigate={setActive} /> : null}
             {active === 'todos' ? <TodosView /> : null}
             {active === 'links' ? <LinksView /> : null}

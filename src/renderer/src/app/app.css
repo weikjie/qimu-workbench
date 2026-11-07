@@ -384,6 +384,18 @@
   overflow: hidden;
 }
 
+/* The notes module owns the entire canvas: no page gutter or width clamp. */
+.app-content.app-content--editor {
+  padding: 0;
+  background: var(--color-surface);
+}
+
+.app-content--editor > .app-error {
+  width: auto;
+  max-width: none;
+  margin: 14px 20px 0;
+}
+
 .view-page {
   width: 100%;
   max-width: var(--content-max);
@@ -396,6 +408,11 @@
   flex: 1;
   flex-direction: column;
   min-height: 0;
+}
+
+.view-page.view-page--editor {
+  max-width: none;
+  height: 100%;
 }
 
 @keyframes view-enter {

@@ -1,8 +1,19 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
-import { Check, Columns2, Eye, FileText, LoaderCircle, PencilLine, Plus, Search, Trash2 } from 'lucide-react'
+import {
+  Check,
+  Columns2,
+  Eye,
+  FileText,
+  LoaderCircle,
+  PanelLeftClose,
+  PanelLeftOpen,
+  PencilLine,
+  Plus,
+  Search,
+  Trash2
+} from 'lucide-react'
 import type { MarkdownNote } from '@shared/types'
 import { useWorkspace } from '../../app/WorkspaceProvider'
-import { PageHeader } from '../../components/layout/PageHeader'
 import { Button } from '../../components/ui/Button'
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
 import { EmptyState } from '../../components/ui/EmptyState'
@@ -17,6 +28,16 @@ import './notes.css'
 
 type EditorMode = 'edit' | 'split' | 'preview'
 
+const RAIL_PREFERENCE_KEY = 'qimu.notes.railCollapsed'
+
+function readRailPreference(): boolean {
+  try {
+    return window.localStorage.getItem(RAIL_PREFERENCE_KEY) === 'true'
+  } catch {
+    return false
+  }
+}
+
 const MODE_OPTIONS: ReadonlyArray<SegmentedOption<EditorMode>> = [
   { value: 'edit', label: '编辑', icon: <PencilLine size={13} /> },
   { value: 'split', label: '双栏', icon: <Columns2 size={13} /> },
@@ -29,6 +50,7 @@ export function NotesView(): React.JSX.Element {
   const [activeId, setActiveId] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [mode, setMode] = useState<EditorMode>('split')
+  const [railCollapsed, setRailCollapsed] = useState(readRailPreference)
   const [deleteTarget, setDeleteTarget] = useState<MarkdownNote | null>(null)
   const titleRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -77,6 +99,16 @@ export function NotesView(): React.JSX.Element {
   function selectNote(noteId: string): void {
     setActiveId(noteId)
     selectionRef.current = { start: 0, end: 0 }
+  }
+
+  function toggleRail(): void {
+    const next = !railCollapsed
+    setRailCollapsed(next)
+    try {
+      window.localStorage.setItem(RAIL_PREFERENCE_KEY, String(next))
+    } catch {
+      // A blocked localStorage should not prevent collapsing the sidebar.
+    }
   }
 
   function createNote(): void {
@@ -203,19 +235,8 @@ export function NotesView(): React.JSX.Element {
 
   return (
     <div className="notes-page">
-      <PageHeader
-        eyebrow="NOTES"
-        title="Markdown 笔记"
-        description="左边书写，右边看见文字成形。所有更改都会安静地保存。"
-        actions={
-          <Button variant="primary" icon={<Plus size={16} />} onClick={createNote}>
-            新建笔记
-          </Button>
-        }
-      />
-
       {data.notes.length === 0 ? (
-        <div className="notes-empty-card">
+        <div className="notes-empty-screen">
           <EmptyState
             icon={<FileText size={25} strokeWidth={1.65} />}
             title="还没有笔记"
@@ -228,8 +249,20 @@ export function NotesView(): React.JSX.Element {
           />
         </div>
       ) : (
-        <div className="notes-workbench">
-          <aside className="note-rail">
+        <div className={`notes-workbench${railCollapsed ? ' is-rail-collapsed' : ''}`}>
+          <aside className="note-rail" aria-label="笔记列表" aria-hidden={railCollapsed}>
+            <div className="note-rail__top">
+              <div className="note-rail__heading">
+                <span className="note-rail__name">笔记库</span>
+                <span className="note-rail__count">{data.notes.length}</span>
+              </div>
+              <IconButton
+                label="收起笔记列表"
+                icon={<PanelLeftClose size={17} />}
+                onClick={toggleRail}
+              />
+            </div>
+
             <div className="note-rail__search">
               <Search size={14} className="note-rail__search-icon" aria-hidden="true" />
               <input
@@ -290,38 +323,37 @@ export function NotesView(): React.JSX.Element {
             {activeNote ? (
               <>
                 <header className="note-editor__header">
-                  <div className="note-editor__title-wrap">
-                    <input
-                      ref={titleRef}
-                      value={activeNote.title}
-                      maxLength={300}
-                      className="note-editor__title"
-                      placeholder="无标题笔记"
-                      aria-label="笔记标题"
-                      onChange={(event) => updateNote(activeNote.id, { title: event.target.value })}
-                    />
-                    <span className="note-editor__meta">
-                      编辑于 {formatRelativeTime(activeNote.updatedAt)}
-                    </span>
+                  <div className="note-editor__heading">
+                    {railCollapsed ? (
+                      <IconButton
+                        label="展开笔记列表"
+                        icon={<PanelLeftOpen size={17} />}
+                        className="note-editor__rail-open"
+                        onClick={toggleRail}
+                      />
+                    ) : null}
+                    <div className="note-editor__title-wrap">
+                      <input
+                        ref={titleRef}
+                        value={activeNote.title}
+                        maxLength={300}
+                        className="note-editor__title"
+                        placeholder="无标题笔记"
+                        aria-label="笔记标题"
+                        onChange={(event) => updateNote(activeNote.id, { title: event.target.value })}
+                      />
+                      <span className="note-editor__meta">
+                        编辑于 {formatRelativeTime(activeNote.updatedAt)}
+                      </span>
+                    </div>
                   </div>
                   <div className="note-editor__actions">
-                    <span
-                      className={`note-save-state note-save-state--${saveState}`}
-                      aria-live="polite"
-                    >
-                      {saveState === 'saving' ? (
-                        <LoaderCircle size={12} className="spin" />
-                      ) : saveState === 'error' ? (
-                        <span className="note-save-state__dot is-error" />
-                      ) : (
-                        <Check size={12} />
-                      )}
-                      {saveState === 'saving'
-                        ? '保存中'
-                        : saveState === 'error'
-                          ? '保存失败'
-                          : '已保存'}
-                    </span>
+                    <IconButton
+                      label="新建笔记"
+                      icon={<Plus size={16} />}
+                      variant="soft"
+                      onClick={createNote}
+                    />
                     <IconButton
                       label="删除这篇笔记"
                       icon={<Trash2 size={15} />}
@@ -391,7 +423,23 @@ export function NotesView(): React.JSX.Element {
                   <span className="note-editor__footer-dot">·</span>
                   <span>{lineCount} 行</span>
                   <span className="note-editor__footer-spacer" />
-                  <span>自动保存至本地</span>
+                  <span
+                    className={`note-save-state note-save-state--${saveState}`}
+                    aria-live="polite"
+                  >
+                    {saveState === 'saving' ? (
+                      <LoaderCircle size={12} className="spin" />
+                    ) : saveState === 'error' ? (
+                      <span className="note-save-state__dot is-error" />
+                    ) : (
+                      <Check size={12} />
+                    )}
+                    {saveState === 'saving'
+                      ? '保存中'
+                      : saveState === 'error'
+                        ? '保存失败'
+                        : '已自动保存'}
+                  </span>
                   <span className="note-editor__footer-dot">·</span>
                   <span className="note-editor__shortcut">
                     <kbd>Ctrl</kbd> + <kbd>S</kbd> 保存
