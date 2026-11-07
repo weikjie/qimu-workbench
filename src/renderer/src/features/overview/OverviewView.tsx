@@ -14,10 +14,12 @@ import type { QuickLink, SectionId } from '@shared/types'
 import { useWorkspace } from '../../app/WorkspaceProvider'
 import { Button } from '../../components/ui/Button'
 import { EmptyState } from '../../components/ui/EmptyState'
+import { PriorityBadge } from '../../components/ui/PriorityBadge'
 import { RoundCheckbox } from '../../components/ui/RoundCheckbox'
 import { useToast } from '../../components/ui/Toast'
 import { formatLongDate, formatRelativeTime, getGreeting } from '../../lib/format'
 import { getExcerpt } from '../../lib/markdown'
+import { sortTodosByPriority } from '../../lib/todo-priority'
 import { getHostname, getLinkInitial, getLinkTone } from '../../lib/url'
 import { desktop } from '../../services/desktop'
 import './overview.css'
@@ -36,9 +38,9 @@ export function OverviewView({ onNavigate }: OverviewViewProps): React.JSX.Eleme
   const completion = totalTodos === 0 ? 0 : Math.round((completedTodos / totalTodos) * 100)
 
   const previewTodos = useMemo(() => {
-    const pending = data.todos.filter((todo) => !todo.done).slice(0, 4)
-    if (pending.length > 0) return pending
-    return data.todos.filter((todo) => todo.done).slice(0, 3)
+    const pending = data.todos.filter((todo) => !todo.done)
+    if (pending.length > 0) return sortTodosByPriority(pending).slice(0, 4)
+    return sortTodosByPriority(data.todos.filter((todo) => todo.done)).slice(0, 3)
   }, [data.todos])
 
   const sortedNotes = useMemo(
@@ -176,7 +178,10 @@ export function OverviewView({ onNavigate }: OverviewViewProps): React.JSX.Eleme
                     size="sm"
                   />
                   <button type="button" className="preview-todo__body" onClick={() => toggleTodo(todo.id)}>
-                    <span className="preview-todo__title">{todo.title}</span>
+                    <span className="preview-todo__main">
+                      <PriorityBadge priority={todo.priority} />
+                      <span className="preview-todo__title">{todo.title}</span>
+                    </span>
                     <span className="preview-todo__meta">
                       {todo.done ? '已完成' : formatRelativeTime(todo.createdAt)}
                     </span>

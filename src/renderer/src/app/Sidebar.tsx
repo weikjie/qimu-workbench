@@ -80,7 +80,7 @@ export function Sidebar({ active, onNavigate }: SidebarProps): React.JSX.Element
             <span className="sidebar__theme-swatch" aria-hidden="true" />
             {theme.label}
           </span>
-          <span>v0.1.7</span>
+          <span>v{__APP_VERSION__}</span>
         </div>
       </div>
     </aside>

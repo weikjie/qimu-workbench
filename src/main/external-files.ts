@@ -1,30 +1,20 @@
 import { randomUUID } from 'node:crypto'
 import { copyFileSync, mkdirSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { copyFile, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises'
-import { basename, dirname, extname, isAbsolute, resolve } from 'node:path'
+import { basename, dirname, extname, join, resolve } from 'node:path'
 import type {
   ExternalFileFlushInput,
   ExternalFileOpenRequest,
   ExternalFileSaveResult,
-  ExternalMarkdownDocument
+  ExternalMarkdownDocument,
+  SavePastedImageResult
 } from '../shared/types'
+import { readImageAsset, storePastedImage, type ImageAsset } from './image-files'
 
 const MARKDOWN_EXTENSIONS = new Set(['.md', '.markdown'])
 const MAX_EXTERNAL_FILE_BYTES = 8 * 1024 * 1024
 const MAX_EXTERNAL_CONTENT_CHARS = 2_000_000
 const MAX_OPEN_DOCUMENTS = 50
-const MAX_ASSET_BYTES = 32 * 1024 * 1024
-const ASSET_CONTENT_TYPES = new Map([
-  ['.png', 'image/png'],
-  ['.jpg', 'image/jpeg'],
-  ['.jpeg', 'image/jpeg'],
-  ['.gif', 'image/gif'],
-  ['.webp', 'image/webp'],
-  ['.svg', 'image/svg+xml'],
-  ['.avif', 'image/avif'],
-  ['.bmp', 'image/bmp'],
-  ['.ico', 'image/x-icon']
-])
 
 interface OpenDocument {
   id: string
@@ -154,11 +144,6 @@ export function closeExternalDocument(id: string): void {
   saveQueues.delete(id)
 }
 
-export interface ExternalAsset {
-  data: Uint8Array
-  contentType: string
-}
-
 /**
  * Resolves an image relative to an already-open Markdown file. Only image
  * files are served, and every request must reference a live document ID from
@@ -168,32 +153,34 @@ export interface ExternalAsset {
 export async function readExternalAsset(
   documentId: string,
   source: string
-): Promise<ExternalAsset | null> {
+): Promise<ImageAsset | null> {
   const document = openDocuments.get(documentId)
   if (!document) return null
+  return readImageAsset(dirname(document.path), source)
+}
 
-  const withoutQuery = source.split(/[?#]/, 1)[0] ?? ''
-  let relativePath: string
-  try {
-    relativePath = decodeURIComponent(withoutQuery).replace(/\\/g, '/')
-  } catch {
-    return null
+/**
+ * Stores a pasted image next to an open Markdown file in
+ * `img/<document name>/`, so the existing relative-path image protocol can
+ * serve it.
+ */
+export async function saveExternalPastedImage(
+  documentId: string,
+  data: Uint8Array
+): Promise<SavePastedImageResult> {
+  const document = openDocuments.get(documentId)
+  if (!document) {
+    return { ok: false, message: '这个文件已经关闭，请重新打开后再粘贴图片。' }
   }
-  if (!relativePath || isAbsolute(relativePath) || /^[a-z]:/i.test(relativePath)) return null
 
-  const filePath = resolve(dirname(document.path), relativePath)
-  const ext = extname(filePath).toLowerCase()
-  const contentType = ASSET_CONTENT_TYPES.get(ext)
-  if (!contentType) return null
+  const stem = basename(document.path, extname(document.path))
+  const stored = await storePastedImage(join(dirname(document.path), 'img', stem), data)
+  if (!stored.ok) return stored
 
-  try {
-    const info = await stat(filePath)
-    if (!info.isFile() || info.size > MAX_ASSET_BYTES) return null
-    const data = await readFile(filePath)
-    return { data: new Uint8Array(data), contentType }
-  } catch (error) {
-    console.warn('[workbench] could not read markdown image:', error)
-    return null
+  return {
+    ok: true,
+    relativePath: `img/${stem}/${stored.image.fileName}`,
+    fileName: stored.image.fileName
   }
 }
 

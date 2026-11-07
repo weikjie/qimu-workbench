@@ -4,6 +4,8 @@ import type {
   ExternalFileOpenRequest,
   ExternalFileSaveResult,
   OpenResult,
+  SavePastedImageInput,
+  SavePastedImageResult,
   WorkspaceData
 } from './types'
 
@@ -19,7 +21,9 @@ export const IPC = {
   externalFilesAvailable: 'files:available',
   saveExternalFile: 'files:save',
   closeExternalFile: 'files:close',
-  flushExternalFiles: 'files:flush'
+  flushExternalFiles: 'files:flush',
+  savePastedImage: 'images:save',
+  copyText: 'clipboard:copy-text'
 } as const
 
 /** The small, typed surface exposed to the renderer by the preload bridge. */
@@ -40,6 +44,15 @@ export interface WorkbenchApi {
   open: {
     link(url: string, browserId: string | null): Promise<OpenResult>
     external(url: string): Promise<OpenResult>
+  }
+  images: {
+    /** Saves clipboard image bytes next to the note or Markdown file and
+     * returns a path that can be embedded in Markdown. */
+    save(input: SavePastedImageInput): Promise<SavePastedImageResult>
+  }
+  clipboard: {
+    /** Writes plain text to the operating system clipboard. */
+    writeText(text: string): Promise<OpenResult>
   }
   files: {
     /** Consumes Markdown files queued by the main process. */

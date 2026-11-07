@@ -20,6 +20,12 @@ const api: WorkbenchApi = {
     link: (url, browserId) => ipcRenderer.invoke(IPC.openLink, { url, browserId }),
     external: (url) => ipcRenderer.invoke(IPC.openExternal, url)
   },
+  images: {
+    save: (input) => ipcRenderer.invoke(IPC.savePastedImage, input)
+  },
+  clipboard: {
+    writeText: (text) => ipcRenderer.invoke(IPC.copyText, text)
+  },
   files: {
     takeOpenRequests: () => ipcRenderer.invoke(IPC.takeExternalFiles),
     save: (id, content) => ipcRenderer.invoke(IPC.saveExternalFile, { id, content }),

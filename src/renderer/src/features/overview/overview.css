@@ -346,12 +346,20 @@
 
 .preview-todo__body {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   flex: 1;
   gap: 12px;
   min-width: 0;
   padding: 9px 0;
   text-align: left;
+}
+
+.preview-todo__main {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  gap: 7px;
+  min-width: 0;
 }
 
 .preview-todo__title {

@@ -4,6 +4,8 @@ import type {
   ExternalFileOpenRequest,
   ExternalFileSaveResult,
   OpenResult,
+  PastedImageTarget,
+  SavePastedImageResult,
   WorkspaceData
 } from '@shared/types'
 
@@ -39,6 +41,16 @@ export const desktop = {
   },
   openExternal(url: string): Promise<OpenResult> {
     return bridge().open.external(url)
+  },
+  savePastedImage(
+    target: PastedImageTarget,
+    id: string,
+    data: ArrayBuffer
+  ): Promise<SavePastedImageResult> {
+    return bridge().images.save({ target, id, data })
+  },
+  copyText(text: string): Promise<OpenResult> {
+    return bridge().clipboard.writeText(text)
   },
   takeOpenFileRequests(): Promise<ExternalFileOpenRequest[]> {
     return bridge().files.takeOpenRequests()

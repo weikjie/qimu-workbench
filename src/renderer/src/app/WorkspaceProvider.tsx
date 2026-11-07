@@ -10,6 +10,7 @@ import {
   type ReactNode
 } from 'react'
 import { EMPTY_WORKSPACE } from '@shared/defaults'
+import { DEFAULT_TODO_PRIORITY, type TodoPriority } from '@shared/priorities'
 import type { QuickLink, SaveState, WorkspaceData } from '@shared/types'
 import { createId } from '../lib/id'
 import { desktop } from '../services/desktop'
@@ -25,6 +26,8 @@ type WorkspaceAction =
   | { type: 'todo/add'; todo: WorkspaceData['todos'][number] }
   | { type: 'todo/toggle'; id: string; now: string }
   | { type: 'todo/rename'; id: string; title: string }
+  | { type: 'todo/priority'; id: string; priority: TodoPriority }
+  | { type: 'todo/reorder'; id: string; targetId: string; position: 'before' | 'after' }
   | { type: 'todo/remove'; id: string }
   | { type: 'todo/clearCompleted' }
   | { type: 'link/add'; link: QuickLink }
@@ -54,6 +57,28 @@ function reducer(state: WorkspaceData, action: WorkspaceAction): WorkspaceData {
         ...state,
         todos: state.todos.map((todo) => (todo.id === action.id ? { ...todo, title: action.title } : todo))
       }
+    case 'todo/priority':
+      return {
+        ...state,
+        todos: state.todos.map((todo) =>
+          todo.id === action.id ? { ...todo, priority: action.priority } : todo
+        )
+      }
+    case 'todo/reorder': {
+      if (action.id === action.targetId) return state
+      const moving = state.todos.find((todo) => todo.id === action.id)
+      const target = state.todos.find((todo) => todo.id === action.targetId)
+      if (!moving || !target || moving.priority !== target.priority) return state
+
+      const remaining = state.todos.filter((todo) => todo.id !== action.id)
+      const targetIndex = remaining.findIndex((todo) => todo.id === action.targetId)
+      if (targetIndex < 0) return state
+      const insertAt = action.position === 'before' ? targetIndex : targetIndex + 1
+      return {
+        ...state,
+        todos: [...remaining.slice(0, insertAt), moving, ...remaining.slice(insertAt)]
+      }
+    }
     case 'todo/remove':
       return { ...state, todos: state.todos.filter((todo) => todo.id !== action.id) }
     case 'todo/clearCompleted':
@@ -111,9 +136,11 @@ interface WorkspaceContextValue {
   ready: boolean
   saveState: SaveState
   loadError: string | null
-  addTodo: (title: string) => boolean
+  addTodo: (title: string, priority?: TodoPriority) => boolean
   toggleTodo: (id: string) => void
   renameTodo: (id: string, title: string) => void
+  setTodoPriority: (id: string, priority: TodoPriority) => void
+  reorderTodo: (id: string, targetId: string, position: 'before' | 'after') => void
   removeTodo: (id: string) => void
   clearCompleted: () => void
   addLink: (input: AddLinkInput) => void
@@ -218,7 +245,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }): React.
     await persist(latestData.current)
   }, [persist])
 
-  const addTodo = useCallback((title: string): boolean => {
+  const addTodo = useCallback((title: string, priority: TodoPriority = DEFAULT_TODO_PRIORITY): boolean => {
     const clean = title.trim()
     if (!clean) return false
     dispatch({
@@ -227,6 +254,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }): React.
         id: createId('todo'),
         title: clean.slice(0, 500),
         done: false,
+        priority,
         createdAt: new Date().toISOString(),
         completedAt: null
       }
@@ -243,6 +271,17 @@ export function WorkspaceProvider({ children }: { children: ReactNode }): React.
     if (!clean) return
     dispatch({ type: 'todo/rename', id, title: clean.slice(0, 500) })
   }, [])
+
+  const setTodoPriority = useCallback((id: string, priority: TodoPriority): void => {
+    dispatch({ type: 'todo/priority', id, priority })
+  }, [])
+
+  const reorderTodo = useCallback(
+    (id: string, targetId: string, position: 'before' | 'after'): void => {
+      dispatch({ type: 'todo/reorder', id, targetId, position })
+    },
+    []
+  )
 
   const removeTodo = useCallback((id: string): void => {
     dispatch({ type: 'todo/remove', id })
@@ -296,6 +335,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }): React.
       addTodo,
       toggleTodo,
       renameTodo,
+      setTodoPriority,
+      reorderTodo,
       removeTodo,
       clearCompleted,
       addLink,
@@ -314,6 +355,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }): React.
       addTodo,
       toggleTodo,
       renameTodo,
+      setTodoPriority,
+      reorderTodo,
       removeTodo,
       clearCompleted,
       addLink,

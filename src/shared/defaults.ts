@@ -74,6 +74,7 @@ export function createDefaultWorkspace(now = Date.now()): WorkspaceData {
         id: 'seed-todo-focus',
         title: '整理今天最重要的三件事',
         done: false,
+        priority: 'P0',
         createdAt: iso(DAY * 0.1),
         completedAt: null
       },
@@ -81,6 +82,7 @@ export function createDefaultWorkspace(now = Date.now()): WorkspaceData {
         id: 'seed-todo-links',
         title: '把常看的网站收进快捷链接',
         done: false,
+        priority: 'P1',
         createdAt: iso(DAY * 0.2),
         completedAt: null
       },
@@ -88,6 +90,7 @@ export function createDefaultWorkspace(now = Date.now()): WorkspaceData {
         id: 'seed-todo-note',
         title: '打开 Markdown 笔记，写下第一个想法',
         done: false,
+        priority: 'P2',
         createdAt: iso(DAY * 0.3),
         completedAt: null
       },
@@ -95,6 +98,7 @@ export function createDefaultWorkspace(now = Date.now()): WorkspaceData {
         id: 'seed-todo-tour',
         title: '逛一逛栖木的每个角落',
         done: true,
+        priority: 'P3',
         createdAt: iso(DAY * 0.8),
         completedAt: iso(DAY * 0.4)
       }

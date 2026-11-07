@@ -4,11 +4,12 @@ import {
   existsSync,
   mkdirSync,
   renameSync,
+  rmSync,
   statSync,
   unlinkSync,
   writeFileSync
 } from 'node:fs'
-import { copyFile, mkdir, readFile, readdir, rename, stat, unlink, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, readFile, readdir, rename, rm, stat, unlink, writeFile } from 'node:fs/promises'
 import { basename, extname, join } from 'node:path'
 import { getAppDataPaths } from './data-paths'
 
@@ -47,6 +48,19 @@ export function sanitizeStoredNoteFileName(value: unknown): string | null {
 
 export function noteFileStem(fileName: string): string {
   return basename(fileName, extname(fileName))
+}
+
+/** Images pasted into a note live in `notes/img/<note name>/`. */
+export function noteImageDirectory(fileName: string): string {
+  return join(getAppDataPaths().notesDir, 'img', noteFileStem(fileName))
+}
+
+export async function removeNoteImageDirectory(fileName: string): Promise<void> {
+  await rm(noteImageDirectory(fileName), { recursive: true, force: true })
+}
+
+export function removeNoteImageDirectorySync(fileName: string): void {
+  rmSync(noteImageDirectory(fileName), { recursive: true, force: true })
 }
 
 export function titleToFileStem(title: string): string {

@@ -14,7 +14,7 @@ import {
   Trash2,
   X
 } from 'lucide-react'
-import { createExternalAssetUrl } from '@shared/assets'
+import { createExternalAssetUrl, createImageMarkdown, createNoteAssetUrl } from '@shared/assets'
 import type { MarkdownNote } from '@shared/types'
 import { useOpenFiles } from '../../app/OpenFilesProvider'
 import { useWorkspace } from '../../app/WorkspaceProvider'
@@ -48,6 +48,28 @@ const MODE_OPTIONS: ReadonlyArray<SegmentedOption<EditorMode>> = [
   { value: 'preview', label: '预览', icon: <Eye size={13} /> }
 ]
 
+const CLIPBOARD_IMAGE_NAME = /\.(?:png|jpe?g|gif|webp|bmp|avif|ico)$/i
+
+interface PasteTarget {
+  kind: 'file' | 'note'
+  id: string
+}
+
+function clipboardImages(data: DataTransfer): File[] {
+  const images: File[] = []
+  for (const item of Array.from(data.items)) {
+    if (item.kind !== 'file' || !item.type.startsWith('image/')) continue
+    const file = item.getAsFile()
+    if (file) images.push(file)
+  }
+  if (images.length > 0) return images
+
+  for (const file of Array.from(data.files)) {
+    if (file.type.startsWith('image/') || CLIPBOARD_IMAGE_NAME.test(file.name)) images.push(file)
+  }
+  return images
+}
+
 export function NotesView(): React.JSX.Element {
   const { data, saveState, addNote, updateNote, removeNote, saveNow } = useWorkspace()
   const {
@@ -69,6 +91,9 @@ export function NotesView(): React.JSX.Element {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const selectionRef = useRef({ start: 0, end: 0 })
   const focusTitleOnNext = useRef(false)
+  const contentRef = useRef('')
+  const activeTargetRef = useRef<string | null>(null)
+  const imagePasteQueue = useRef<Promise<void>>(Promise.resolve())
 
   const sortedNotes = useMemo(
     () => [...data.notes].sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt)),
@@ -117,6 +142,16 @@ export function NotesView(): React.JSX.Element {
   const activeNote = data.notes.find((note) => note.id === activeId) ?? sortedNotes[0] ?? null
   const currentContent = activeFile?.content ?? activeNote?.content ?? ''
   const previewFileId = activeFile?.id ?? null
+  const previewNoteId = activeFile ? null : (activeNote?.id ?? null)
+
+  // Pasting an image is asynchronous (the file is written by the main
+  // process), so the handler reads the latest content and target through refs.
+  contentRef.current = currentContent
+  activeTargetRef.current = activeFile
+    ? `file:${activeFile.id}`
+    : activeNote
+      ? `note:${activeNote.id}`
+      : null
 
   // Closing the last visible document should fall back to another open file
   // when the note library itself is empty.
@@ -126,16 +161,19 @@ export function NotesView(): React.JSX.Element {
   }, [activeFileId, openFiles, activeNote, selectFile])
 
   const deferredContent = useDeferredValue(currentContent)
-  const previewHtml = useMemo(
-    () =>
-      renderMarkdown(
-        deferredContent,
-        previewFileId
-          ? { resolveImageSource: (source) => createExternalAssetUrl(previewFileId, source) }
-          : undefined
-      ),
-    [deferredContent, previewFileId]
-  )
+  const previewHtml = useMemo(() => {
+    if (previewFileId) {
+      return renderMarkdown(deferredContent, {
+        resolveImageSource: (source) => createExternalAssetUrl(previewFileId, source)
+      })
+    }
+    if (previewNoteId) {
+      return renderMarkdown(deferredContent, {
+        resolveImageSource: (source) => createNoteAssetUrl(previewNoteId, source)
+      })
+    }
+    return renderMarkdown(deferredContent)
+  }, [deferredContent, previewFileId, previewNoteId])
   const characterCount = countCharacters(currentContent)
   const lineCount = currentContent ? currentContent.split('\n').length : 0
   const currentSaveState = activeFile?.saveState ?? saveState
@@ -152,6 +190,9 @@ export function NotesView(): React.JSX.Element {
   }
 
   function commitContent(next: string): void {
+    // Keep the ref in sync immediately. Image pastes are queued and need the
+    // newest text before React has committed the next render.
+    contentRef.current = next
     if (activeFile) {
       updateFileContent(activeFile.id, next)
     } else if (activeNote) {
@@ -274,6 +315,90 @@ export function NotesView(): React.JSX.Element {
       event.preventDefault()
       insertTab()
     }
+  }
+
+  async function insertPastedImages(
+    images: File[],
+    target: PasteTarget,
+    targetKey: string
+  ): Promise<void> {
+    // A brand-new note may not have a file on disk yet. Persisting it first
+    // lets the main process know which image folder belongs to this note.
+    if (target.kind === 'note') {
+      await saveNow()
+    }
+
+    const snippets: string[] = []
+    for (const image of images) {
+      try {
+        const data = await image.arrayBuffer()
+        const result = await desktop.savePastedImage(target.kind, target.id, data)
+        if (!result.ok || !result.relativePath) {
+          notify(result.message ?? '图片保存失败。', 'error')
+          continue
+        }
+        snippets.push(createImageMarkdown(result.relativePath))
+      } catch (error) {
+        console.error('Unable to save pasted image:', error)
+        notify('图片保存失败，请稍后重试。', 'error')
+      }
+    }
+    if (snippets.length === 0) return
+
+    if (activeTargetRef.current !== targetKey) {
+      notify('图片已保存，但当前笔记已经切换，未插入到正文。', 'info')
+      return
+    }
+
+    const content = contentRef.current
+    const textarea = textareaRef.current
+    // When React has already rendered the latest text, the live caret is the
+    // most accurate insertion point. A queued paste may run before that
+    // render, so fall back to the caret this editor last committed.
+    const sameView = textarea !== null && textarea.value === content
+    const start = Math.min(
+      sameView ? textarea.selectionStart : selectionRef.current.start,
+      content.length
+    )
+    const end = Math.min(
+      Math.max(sameView ? textarea.selectionEnd : selectionRef.current.end, start),
+      content.length
+    )
+    const before = content.slice(0, start)
+    const after = content.slice(end)
+    const block = snippets.join('\n\n')
+    const prefix = before && !before.endsWith('\n\n') ? (before.endsWith('\n') ? '\n' : '\n\n') : ''
+    const suffix = after && !after.startsWith('\n\n') ? (after.startsWith('\n') ? '\n' : '\n\n') : ''
+    commitContent(`${before}${prefix}${block}${suffix}${after}`)
+
+    const caret = start + prefix.length + block.length
+    selectionRef.current = { start: caret, end: caret }
+    window.requestAnimationFrame(() => {
+      const element = textareaRef.current
+      if (!element) return
+      element.focus()
+      element.setSelectionRange(caret, caret)
+    })
+  }
+
+  async function handleEditorPaste(event: React.ClipboardEvent<HTMLTextAreaElement>): Promise<void> {
+    const images = clipboardImages(event.clipboardData)
+    if (images.length === 0) return
+
+    const target: PasteTarget | null = activeFile
+      ? { kind: 'file', id: activeFile.id }
+      : activeNote
+        ? { kind: 'note', id: activeNote.id }
+        : null
+    if (!target) return
+
+    event.preventDefault()
+    const targetKey = `${target.kind}:${target.id}`
+    const task = imagePasteQueue.current
+      .catch(() => undefined)
+      .then(() => insertPastedImages(images, target, targetKey))
+    imagePasteQueue.current = task.catch(() => undefined)
+    await task
   }
 
   function handlePreviewClick(event: React.MouseEvent<HTMLDivElement>): void {
@@ -546,12 +671,15 @@ export function NotesView(): React.JSX.Element {
                         ref={textareaRef}
                         value={currentContent}
                         className="note-textarea"
-                        placeholder="从这里开始书写…&#10;&#10;支持 Markdown：用 # 写标题，用 - 写列表，用 > 引用一段话。"
+                        placeholder="从这里开始书写…&#10;&#10;支持 Markdown：用 # 写标题，用 - 写列表，用 > 引用一段话。&#10;粘贴图片会自动存入笔记文件夹。"
                         aria-label="Markdown 内容"
                         spellCheck={false}
                         onSelect={rememberSelection}
                         onClick={rememberSelection}
                         onKeyUp={rememberSelection}
+                        onPaste={(event) => {
+                          void handleEditorPaste(event)
+                        }}
                         onChange={(event) => {
                           commitContent(event.target.value)
                           rememberSelection()

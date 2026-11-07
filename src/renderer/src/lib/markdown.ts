@@ -38,7 +38,8 @@ export function getExcerpt(markdown: string, length = 100): string {
   const plain = markdown
     .replace(/```[\s\S]*?```/g, ' ')
     .replace(/`([^`]+)`/g, '$1')
-    .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
+    .replace(/!\[[^\]]*\]\(<[^>]*>\)/g, ' [图片] ')
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, ' [图片] ')
     .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
     .replace(/^#{1,6}\s+/gm, '')
     .replace(/^\s*[-*+]\s+/gm, '')

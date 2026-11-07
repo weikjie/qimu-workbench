@@ -1,9 +1,12 @@
+import type { TodoPriority } from './priorities'
+
 export type SectionId = 'overview' | 'todos' | 'links' | 'notes'
 
 export interface Todo {
   id: string
   title: string
   done: boolean
+  priority: TodoPriority
   createdAt: string
   completedAt: string | null
 }
@@ -65,6 +68,23 @@ export interface ExternalFileSaveResult extends OpenResult {
 export interface ExternalFileFlushInput {
   id: string
   content: string
+}
+
+/** Where a pasted image belongs: a built-in note or a Markdown file opened
+ * from the operating system. */
+export type PastedImageTarget = 'note' | 'file'
+
+export interface SavePastedImageInput {
+  target: PastedImageTarget
+  /** A note ID for `note`, or an open-document ID for `file`. */
+  id: string
+  data: ArrayBuffer
+}
+
+export interface SavePastedImageResult extends OpenResult {
+  /** Image path relative to the note or Markdown file, using `/` separators. */
+  relativePath?: string
+  fileName?: string
 }
 
 export type SaveState = 'loading' | 'saving' | 'saved' | 'error'

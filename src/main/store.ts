@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, renameSync, writeFileSync } from 'node:fs'
 import { copyFile, mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { createDefaultWorkspace } from '../shared/defaults'
+import { DEFAULT_TODO_PRIORITY, isTodoPriority } from '../shared/priorities'
 import { getAppDataPaths } from './data-paths'
 import {
   MAX_NOTE_CHARS,
@@ -12,6 +13,8 @@ import {
   readNoteFile,
   removeNoteFile,
   removeNoteFileSync,
+  removeNoteImageDirectory,
+  removeNoteImageDirectorySync,
   sanitizeStoredNoteFileName,
   titleToFileStem,
   uniqueNoteFileName,
@@ -62,6 +65,12 @@ interface NotePlan {
 /** Main-process memory of where each visible note lives on disk. */
 const trackedNotes = new Map<string, TrackedNote>()
 
+/** The current file name of a note, or `null` when the note has not been
+ * written to disk yet. Used to locate the note's image directory. */
+export function trackedNoteFile(noteId: string): string | null {
+  return trackedNotes.get(noteId)?.file ?? null
+}
+
 function dataFile(): string {
   return getAppDataPaths().workspaceFile
 }
@@ -100,6 +109,7 @@ function sanitizeTodos(input: unknown): Todo[] {
         id: text(item.id) || crypto.randomUUID(),
         title: title.slice(0, 500),
         done,
+        priority: isTodoPriority(item.priority) ? item.priority : DEFAULT_TODO_PRIORITY,
         createdAt: isoDate(item.createdAt, now),
         completedAt: done ? isoDate(item.completedAt, now) : null
       }
@@ -417,12 +427,20 @@ async function persistWorkspace(data: WorkspaceData): Promise<void> {
 
   await writePersistedJson(buildPersistedWorkspace(safe, files))
 
+  const liveIds = new Set(plans.map((plan) => plan.note.id))
   const targets = new Set(plans.map((plan) => fileKey(plan.file)))
-  for (const tracked of trackedNotes.values()) {
+  for (const [id, tracked] of trackedNotes) {
     if (targets.has(fileKey(tracked.file))) continue
     await removeNoteFile(tracked.file).catch((error) => {
       console.warn('[workbench] could not remove old note file:', error)
     })
+    // A renamed note keeps its existing image folder so image links written
+    // under the previous name keep working. Only a deleted note is cleaned up.
+    if (!liveIds.has(id)) {
+      await removeNoteImageDirectory(tracked.file).catch((error) => {
+        console.warn('[workbench] could not remove note images:', error)
+      })
+    }
   }
 
   trackedNotes.clear()
@@ -486,13 +504,21 @@ export function flushWorkspaceSync(input: unknown): void {
 
     writePersistedJsonSync(buildPersistedWorkspace(safe, files))
 
+    const liveIds = new Set(plans.map((plan) => plan.note.id))
     const targets = new Set(plans.map((plan) => fileKey(plan.file)))
-    for (const tracked of trackedNotes.values()) {
+    for (const [id, tracked] of trackedNotes) {
       if (targets.has(fileKey(tracked.file))) continue
       try {
         removeNoteFileSync(tracked.file)
       } catch (error) {
         console.warn('[workbench] could not remove old note file:', error)
+      }
+      if (!liveIds.has(id)) {
+        try {
+          removeNoteImageDirectorySync(tracked.file)
+        } catch (error) {
+          console.warn('[workbench] could not remove note images:', error)
+        }
       }
     }
 

@@ -1,8 +1,8 @@
-import { app, BrowserWindow, Menu, Tray, ipcMain, protocol, shell } from 'electron'
+import { app, BrowserWindow, Menu, Tray, clipboard, ipcMain, protocol, shell } from 'electron'
 import { join } from 'node:path'
 import { writeFile } from 'node:fs/promises'
 import { IPC } from '../shared/api'
-import { EXTERNAL_ASSET_SCHEME } from '../shared/assets'
+import { EXTERNAL_ASSET_HOST, EXTERNAL_ASSET_SCHEME, NOTE_ASSET_HOST } from '../shared/assets'
 import { detectBrowsers, listBrowserInfo, openExternalUrl, openInBrowser } from './browsers'
 import { configureAppDataPaths, getAppDataPaths } from './data-paths'
 import {
@@ -12,8 +12,11 @@ import {
   queueExternalMarkdown,
   readExternalAsset,
   saveExternalDocument,
+  saveExternalPastedImage,
   takeExternalOpenRequests
 } from './external-files'
+import type { ImageAsset } from './image-files'
+import { readNoteAsset, saveNotePastedImage } from './note-images'
 import { flushWorkspaceSync, loadWorkspace, queueWorkspaceSave } from './store'
 
 protocol.registerSchemesAsPrivileged([
@@ -92,29 +95,41 @@ function isSafeString(value: unknown, maxLength = 4000): value is string {
   return typeof value === 'string' && value.length > 0 && value.length <= maxLength
 }
 
+function imageResponse(asset: ImageAsset | null): Response {
+  if (!asset) return new Response(null, { status: 404 })
+
+  // The asset buffer is a fresh, exact-length copy, so its ArrayBuffer can
+  // be handed to Response directly.
+  return new Response(asset.data.buffer as ArrayBuffer, {
+    status: 200,
+    headers: {
+      'content-type': asset.contentType,
+      'cache-control': 'no-store',
+      'x-content-type-options': 'nosniff'
+    }
+  })
+}
+
 function registerExternalAssetProtocol(): void {
   protocol.handle(EXTERNAL_ASSET_SCHEME, async (request) => {
     try {
       const url = new URL(request.url)
-      if (url.hostname !== 'doc') return new Response(null, { status: 404 })
-
-      const documentId = decodeURIComponent(url.pathname.replace(/^\/+/, ''))
       const source = url.searchParams.get('path')
-      if (!documentId || !source) return new Response(null, { status: 404 })
+      if (!source) return new Response(null, { status: 404 })
 
-      const asset = await readExternalAsset(documentId, source)
-      if (!asset) return new Response(null, { status: 404 })
+      if (url.hostname === EXTERNAL_ASSET_HOST) {
+        const documentId = decodeURIComponent(url.pathname.replace(/^\/+/, ''))
+        if (!documentId) return new Response(null, { status: 404 })
+        return imageResponse(await readExternalAsset(documentId, source))
+      }
 
-      // The asset buffer is a fresh, exact-length copy, so its ArrayBuffer can
-      // be handed to Response directly.
-      return new Response(asset.data.buffer as ArrayBuffer, {
-        status: 200,
-        headers: {
-          'content-type': asset.contentType,
-          'cache-control': 'no-store',
-          'x-content-type-options': 'nosniff'
-        }
-      })
+      if (url.hostname === NOTE_ASSET_HOST) {
+        const noteId = decodeURIComponent(url.pathname.replace(/^\/+/, ''))
+        if (!noteId) return new Response(null, { status: 404 })
+        return imageResponse(await readNoteAsset(noteId, source))
+      }
+
+      return new Response(null, { status: 404 })
     } catch (error) {
       console.warn('[workbench] image protocol request failed:', error)
       return new Response(null, { status: 400 })
@@ -266,6 +281,52 @@ function registerIpc(): void {
   ipcMain.handle(IPC.takeExternalFiles, async (event) => {
     if (!isTrustedSender(event)) throw new Error('Untrusted sender')
     return takeExternalOpenRequests()
+  })
+
+  ipcMain.handle(IPC.copyText, async (event, text: unknown) => {
+    if (!isTrustedSender(event)) throw new Error('Untrusted sender')
+    if (!isSafeString(text, 10_000)) {
+      return { ok: false, message: '要复制的内容无效。' }
+    }
+    try {
+      clipboard.writeText(text)
+      return { ok: true }
+    } catch (error) {
+      console.error('[workbench] could not write to clipboard:', error)
+      return { ok: false, message: '复制到剪贴板失败。' }
+    }
+  })
+
+  ipcMain.handle(IPC.savePastedImage, async (event, payload: unknown) => {
+    if (!isTrustedSender(event)) throw new Error('Untrusted sender')
+    const input = typeof payload === 'object' && payload !== null ? (payload as Record<string, unknown>) : {}
+    const target = input['target']
+    const id = input['id']
+    const raw = input['data']
+    if (target !== 'note' && target !== 'file') {
+      return { ok: false, message: '图片目标无效。' }
+    }
+    if (!isSafeString(id, 100)) {
+      return { ok: false, message: '图片目标无效。' }
+    }
+
+    let bytes: Uint8Array
+    if (raw instanceof ArrayBuffer) {
+      bytes = new Uint8Array(raw)
+    } else if (ArrayBuffer.isView(raw)) {
+      bytes = new Uint8Array(raw.buffer, raw.byteOffset, raw.byteLength)
+    } else {
+      return { ok: false, message: '图片数据无效。' }
+    }
+
+    try {
+      return target === 'note'
+        ? await saveNotePastedImage(id, bytes)
+        : await saveExternalPastedImage(id, bytes)
+    } catch (error) {
+      console.error('[workbench] could not save pasted image:', error)
+      return { ok: false, message: '图片保存失败，请稍后重试。' }
+    }
   })
 
   ipcMain.handle(IPC.saveExternalFile, async (event, payload: unknown) => {
