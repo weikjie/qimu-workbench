@@ -384,6 +384,26 @@
   white-space: nowrap;
 }
 
+.preview-todo__copy {
+  flex: 0 0 auto;
+  color: var(--color-faint);
+  opacity: 0.5;
+  transition:
+    color var(--transition-fast),
+    background var(--transition-fast),
+    opacity var(--transition-fast);
+}
+
+.preview-todo:hover .preview-todo__copy,
+.preview-todo__copy:focus-visible {
+  opacity: 1;
+}
+
+.preview-todo__copy:hover {
+  color: var(--color-accent-ink);
+  background: var(--color-surface-muted);
+}
+
 .preview-todo.is-done .preview-todo__title {
   color: var(--color-faint);
   text-decoration: line-through;

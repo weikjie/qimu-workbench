@@ -3,6 +3,7 @@ import {
   ArrowRight,
   ArrowUpRight,
   CircleCheckBig,
+  Copy,
   FileText,
   Link2,
   ListTodo,
@@ -10,10 +11,11 @@ import {
   Plus,
   Sparkles
 } from 'lucide-react'
-import type { QuickLink, SectionId } from '@shared/types'
+import type { QuickLink, SectionId, Todo } from '@shared/types'
 import { useWorkspace } from '../../app/WorkspaceProvider'
 import { Button } from '../../components/ui/Button'
 import { EmptyState } from '../../components/ui/EmptyState'
+import { IconButton } from '../../components/ui/IconButton'
 import { PriorityBadge } from '../../components/ui/PriorityBadge'
 import { RoundCheckbox } from '../../components/ui/RoundCheckbox'
 import { useToast } from '../../components/ui/Toast'
@@ -53,6 +55,20 @@ export function OverviewView({ onNavigate }: OverviewViewProps): React.JSX.Eleme
   async function openLink(link: QuickLink): Promise<void> {
     const result = await desktop.openLink(link.url, link.browserId)
     if (!result.ok) notify(result.message ?? '暂时无法打开这个链接。', 'error')
+  }
+
+  async function copyTodo(todo: Todo): Promise<void> {
+    try {
+      const result = await desktop.copyText(todo.title)
+      if (!result.ok) {
+        notify(result.message ?? '复制到剪贴板失败。', 'error')
+        return
+      }
+      notify('已复制到剪贴板', 'success')
+    } catch (error) {
+      console.error('Unable to copy todo:', error)
+      notify('复制到剪贴板失败，请稍后重试。', 'error')
+    }
   }
 
   const greeting = getGreeting()
@@ -186,6 +202,13 @@ export function OverviewView({ onNavigate }: OverviewViewProps): React.JSX.Eleme
                       {todo.done ? '已完成' : formatRelativeTime(todo.createdAt)}
                     </span>
                   </button>
+                  <IconButton
+                    label={`复制「${todo.title}」`}
+                    icon={<Copy size={13} />}
+                    size="sm"
+                    className="preview-todo__copy"
+                    onClick={() => void copyTodo(todo)}
+                  />
                 </div>
               ))}
             </div>

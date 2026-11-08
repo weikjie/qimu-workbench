@@ -153,15 +153,6 @@ export function TodoItem({
         </div>
       ) : (
         <>
-          <button type="button" className="todo-item__body" onClick={onToggle}>
-            <span className="todo-item__title">{todo.title}</span>
-            <span className="todo-item__meta">
-              {todo.done && todo.completedAt
-                ? `完成于 ${formatRelativeTime(todo.completedAt)}`
-                : `创建于 ${formatRelativeTime(todo.createdAt)}`}
-            </span>
-          </button>
-
           <span className="todo-priority-select" data-priority={todo.priority}>
             <select
               className="todo-priority-select__input"
@@ -183,6 +174,15 @@ export function TodoItem({
               aria-hidden="true"
             />
           </span>
+
+          <button type="button" className="todo-item__body" onClick={onToggle}>
+            <span className="todo-item__title">{todo.title}</span>
+            <span className="todo-item__meta">
+              {todo.done && todo.completedAt
+                ? `完成于 ${formatRelativeTime(todo.completedAt)}`
+                : `创建于 ${formatRelativeTime(todo.createdAt)}`}
+            </span>
+          </button>
 
           <div className="todo-item__actions">
             <IconButton
