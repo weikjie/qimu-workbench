@@ -55,6 +55,21 @@ export function noteImageDirectory(fileName: string): string {
   return join(getAppDataPaths().notesDir, 'img', noteFileStem(fileName))
 }
 
+/** Every app-owned note image folder. Renamed notes keep their previous
+ * folder, so this intentionally includes folders no live note maps to. */
+export async function listNoteImageDirectories(): Promise<string[]> {
+  const root = join(getAppDataPaths().notesDir, 'img')
+  try {
+    const entries = await readdir(root, { withFileTypes: true })
+    return entries.filter((entry) => entry.isDirectory()).map((entry) => join(root, entry.name))
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      console.warn('[workbench] could not read note image folders:', error)
+    }
+    return []
+  }
+}
+
 export async function removeNoteImageDirectory(fileName: string): Promise<void> {
   await rm(noteImageDirectory(fileName), { recursive: true, force: true })
 }

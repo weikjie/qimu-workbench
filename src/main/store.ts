@@ -5,11 +5,18 @@ import { createDefaultWorkspace } from '../shared/defaults'
 import { DEFAULT_TODO_PRIORITY, isTodoPriority } from '../shared/priorities'
 import { getAppDataPaths } from './data-paths'
 import {
+  createNoteImageReferenceLookup,
+  pruneUnusedNoteImages,
+  pruneUnusedNoteImagesSync
+} from './note-image-cleanup'
+import {
   MAX_NOTE_CHARS,
   fileKey,
   listNoteFiles,
+  listNoteImageDirectories,
   noteFileExists,
   noteFileStem,
+  noteImageDirectory,
   readNoteFile,
   removeNoteFile,
   removeNoteFileSync,
@@ -316,14 +323,17 @@ export async function loadWorkspace(): Promise<WorkspaceData> {
     await persistWorkspaceMetadata(data).catch((error) => {
       console.error('[workbench] could not persist initial notes:', error)
     })
+    await pruneNoteImagesForLoadedNotes(notes)
     return data
   }
 
+  const notes = await hydrateStoredNotes(root.notes)
+  await pruneNoteImagesForLoadedNotes(notes)
   return {
     version: 1,
     todos: sanitizeTodos(root.todos),
     links: sanitizeLinks(root.links),
-    notes: await hydrateStoredNotes(root.notes)
+    notes
   }
 }
 
@@ -358,6 +368,70 @@ function planNoteFiles(notes: MarkdownNote[]): NotePlan[] {
   }
 
   return plans
+}
+
+/** Note image folders that may hold unused images after this save. */
+function changedNoteImageDirectories(plans: readonly NotePlan[]): string[] {
+  const directories = new Set<string>()
+
+  for (const plan of plans) {
+    if (plan.previous?.content === plan.note.content) continue
+    directories.add(noteImageDirectory(plan.file))
+    // A renamed note keeps its previous image folder. Clean it as well when
+    // the content changed, because references still point at the old name.
+    if (plan.previous && fileKey(plan.previous.file) !== fileKey(plan.file)) {
+      directories.add(noteImageDirectory(plan.previous.file))
+    }
+  }
+
+  return [...directories]
+}
+
+async function pruneNoteImagesForPlans(
+  plans: readonly NotePlan[],
+  notes: readonly MarkdownNote[]
+): Promise<void> {
+  const directories = changedNoteImageDirectories(plans)
+  if (directories.length === 0) return
+
+  const isReferenced = createNoteImageReferenceLookup(notes.map((note) => note.content))
+  for (const directory of directories) {
+    await pruneUnusedNoteImages(directory, isReferenced).catch((error) => {
+      console.warn('[workbench] could not remove unused note images:', error)
+    })
+  }
+}
+
+function pruneNoteImagesForPlansSync(
+  plans: readonly NotePlan[],
+  notes: readonly MarkdownNote[]
+): void {
+  const directories = changedNoteImageDirectories(plans)
+  if (directories.length === 0) return
+
+  const isReferenced = createNoteImageReferenceLookup(notes.map((note) => note.content))
+  for (const directory of directories) {
+    try {
+      pruneUnusedNoteImagesSync(directory, isReferenced)
+    } catch (error) {
+      console.warn('[workbench] could not remove unused note images:', error)
+    }
+  }
+}
+
+/** Startup pass: drop image files left behind by references removed in an
+ * earlier session. Every folder under `notes/img/` is checked, including ones
+ * kept by a renamed note or left over from a removed note. */
+async function pruneNoteImagesForLoadedNotes(notes: readonly MarkdownNote[]): Promise<void> {
+  const directories = await listNoteImageDirectories()
+  if (directories.length === 0) return
+
+  const isReferenced = createNoteImageReferenceLookup(notes.map((note) => note.content))
+  for (const directory of directories) {
+    await pruneUnusedNoteImages(directory, isReferenced).catch((error) => {
+      console.warn('[workbench] could not remove unused note images:', error)
+    })
+  }
 }
 
 function buildPersistedWorkspace(data: WorkspaceData, files: Map<string, string>): PersistedWorkspace {
@@ -445,6 +519,8 @@ async function persistWorkspace(data: WorkspaceData): Promise<void> {
 
   trackedNotes.clear()
   for (const [id, tracked] of nextTracked) trackedNotes.set(id, tracked)
+
+  await pruneNoteImagesForPlans(plans, safe.notes)
 }
 
 let writeQueue: Promise<void> = Promise.resolve()
@@ -524,6 +600,8 @@ export function flushWorkspaceSync(input: unknown): void {
 
     trackedNotes.clear()
     for (const [id, tracked] of nextTracked) trackedNotes.set(id, tracked)
+
+    pruneNoteImagesForPlansSync(plans, safe.notes)
   } catch (error) {
     console.error('[workbench] synchronous flush failed:', error)
   }

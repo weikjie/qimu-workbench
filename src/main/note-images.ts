@@ -1,5 +1,6 @@
 import { getAppDataPaths } from './data-paths'
 import { readImageAsset, storePastedImage, type ImageAsset } from './image-files'
+import { trackPendingNoteImage } from './note-image-cleanup'
 import { noteFileStem, noteImageDirectory } from './note-files'
 import { trackedNoteFile } from './store'
 import type { SavePastedImageResult } from '../shared/types'
@@ -17,8 +18,11 @@ export async function saveNotePastedImage(
     return { ok: false, message: '这篇笔记还没有写入本地文件，请稍后再粘贴图片。' }
   }
 
-  const stored = await storePastedImage(noteImageDirectory(file), data)
+  const directory = noteImageDirectory(file)
+  const stored = await storePastedImage(directory, data)
   if (!stored.ok) return stored
+
+  trackPendingNoteImage(directory, stored.image.fileName)
 
   const stem = noteFileStem(file)
   return {
