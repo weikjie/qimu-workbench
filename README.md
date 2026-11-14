@@ -44,7 +44,7 @@ pnpm dev
 
 打包完成后：
 
-- 安装包：`release/栖木工作台 Setup 0.2.0.exe`
+- 安装包：`release/栖木工作台 Setup 0.2.1.exe`
 - 免安装运行：`release/win-unpacked/栖木工作台.exe`
 
 当前安装包未进行代码签名。在本机自用没有问题；正式对外分发时建议配置 Windows 代码签名证书，以减少 SmartScreen 提示。
