@@ -61,6 +61,12 @@
     var(--shadow-sm);
 }
 
+/* Once the input wraps, the controls stay at the bottom while the plus icon
+   follows the first line. A single line keeps everything centred. */
+.todo-composer.is-multiline {
+  align-items: flex-end;
+}
+
 .todo-composer__icon {
   display: grid;
   place-items: center;
@@ -72,32 +78,30 @@
   background: var(--color-accent-faint);
 }
 
+.todo-composer.is-multiline .todo-composer__icon {
+  align-self: flex-start;
+  margin-top: 2px;
+}
+
 .todo-composer__input {
   flex: 1;
   min-width: 0;
-  height: 40px;
-  padding: 0;
+  min-height: 36px;
+  padding: 7px 0;
   border: 0;
   outline: 0;
+  overflow-y: hidden;
+  resize: none;
   color: var(--color-ink);
   background: transparent;
   font-size: var(--text-base);
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .todo-composer__input::placeholder {
   color: var(--color-faint);
-}
-
-.todo-composer__hint {
-  flex: 0 0 auto;
-  padding: 2px 6px;
-  border: 1px solid var(--color-border);
-  border-radius: 5px;
-  color: var(--color-faint);
-  background: var(--color-surface-soft);
-  font-family: var(--font-mono);
-  font-size: 8.5px;
-  letter-spacing: 0.02em;
 }
 
 .todo-priority-picker {
@@ -181,7 +185,7 @@
   background: var(--color-surface);
 }
 
-.todo-composer .btn {
+.todo-composer .btn.todo-composer__submit {
   height: 36px;
   min-width: 64px;
 }
@@ -415,6 +419,7 @@
 .todo-item__title {
   max-width: 100%;
   overflow-wrap: anywhere;
+  white-space: pre-wrap;
   color: var(--color-ink-soft);
   font-size: 13.5px;
   font-weight: 510;
@@ -531,14 +536,14 @@
 }
 
 .todo-item.is-editing {
-  align-items: center;
+  align-items: flex-start;
   background: color-mix(in srgb, var(--color-accent-faint) 60%, transparent);
 }
 
 .todo-edit {
   display: flex;
   flex: 1;
-  align-items: center;
+  align-items: flex-end;
   gap: 8px;
   min-width: 0;
 }
@@ -546,14 +551,19 @@
 .todo-edit__input {
   flex: 1;
   min-width: 0;
-  height: 34px;
-  padding: 0 10px;
+  min-height: 34px;
+  padding: 6px 10px;
   border: 1px solid color-mix(in srgb, var(--color-accent) 45%, var(--color-border));
   border-radius: var(--radius-xs);
   outline: 0;
+  overflow-y: hidden;
+  resize: none;
   color: var(--color-ink);
   background: var(--color-surface);
   font-size: 13.5px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 7%, transparent);
 }
 
@@ -561,6 +571,7 @@
   display: flex;
   flex: 0 0 auto;
   gap: 2px;
+  align-self: flex-end;
 }
 
 @media (max-width: 920px) {
@@ -568,11 +579,54 @@
     width: 140px;
   }
 
-  .todo-composer__hint {
-    display: none;
-  }
-
   .todo-priority-picker__label {
     display: none;
   }
+}
+
+/* Drag sorting ----------------------------------------------------------- */
+
+body.is-todo-dragging {
+  cursor: grabbing;
+  user-select: none;
+}
+
+body.is-todo-dragging .todo-item,
+body.is-todo-dragging .todo-item__body,
+body.is-todo-dragging .todo-item__drag {
+  cursor: grabbing;
+}
+
+.todo-item--placeholder {
+  border-bottom: 0;
+  background: color-mix(in srgb, var(--color-accent-faint) 72%, transparent);
+  outline: 1px dashed color-mix(in srgb, var(--color-accent) 34%, transparent);
+  outline-offset: -1px;
+  pointer-events: none;
+}
+
+.todo-item--drag-preview {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 260;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--color-accent) 40%, var(--color-border));
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-lifted);
+  opacity: 0.98;
+  transition: none;
+  pointer-events: none;
+  will-change: transform;
+}
+
+.todo-item--drag-preview .todo-item__drag {
+  opacity: 1;
+}
+
+.todo-priority-select__input--static {
+  display: inline-flex;
+  align-items: center;
+  cursor: default;
 }

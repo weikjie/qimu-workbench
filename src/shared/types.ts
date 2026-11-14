@@ -11,13 +11,29 @@ export interface Todo {
   completedAt: string | null
 }
 
+export interface QuickLinkGroup {
+  id: string
+  name: string
+  createdAt: string
+}
+
 export interface QuickLink {
   id: string
   title: string
   url: string
   /** `null` means the operating system's default browser. */
   browserId: string | null
+  /** `null` means the link does not belong to any group. */
+  groupId: string | null
   createdAt: string
+}
+
+/** Values edited in the quick-link dialog. */
+export interface QuickLinkInput {
+  title: string
+  url: string
+  browserId: string | null
+  groupId: string | null
 }
 
 export interface MarkdownNote {
@@ -32,6 +48,7 @@ export interface WorkspaceData {
   version: 1
   todos: Todo[]
   links: QuickLink[]
+  linkGroups: QuickLinkGroup[]
   notes: MarkdownNote[]
 }
 

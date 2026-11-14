@@ -13,18 +13,18 @@ import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { PriorityBadge } from '../../components/ui/PriorityBadge'
 import { useToast } from '../../components/ui/Toast'
+import { useAutosizeTextarea } from '../../hooks/useAutosizeTextarea'
+import { useFlipLayout } from '../../hooks/useFlipLayout'
+import { cn } from '../../lib/cn'
 import { TODO_PRIORITY_META } from '../../lib/todo-priority'
 import { desktop } from '../../services/desktop'
+import { TodoDragPreview } from './TodoDragPreview'
 import { TodoItem } from './TodoItem'
+import { useTodoDrag } from './useTodoDrag'
 import './todos.css'
 
 type Filter = 'all' | 'open' | 'done'
-type DropPosition = 'before' | 'after'
-
-interface DropTarget {
-  id: string
-  position: DropPosition
-}
+type TodoRowItem = { kind: 'todo'; todo: Todo } | { kind: 'placeholder' }
 
 const FILTERS: Array<{ id: Filter; label: string }> = [
   { id: 'all', label: '全部' },
@@ -48,9 +48,10 @@ export function TodosView(): React.JSX.Element {
   const [draftPriority, setDraftPriority] = useState<TodoPriority>(DEFAULT_TODO_PRIORITY)
   const [filter, setFilter] = useState<Filter>('all')
   const [confirmClear, setConfirmClear] = useState(false)
-  const [dragId, setDragId] = useState<string | null>(null)
-  const [dropTarget, setDropTarget] = useState<DropTarget | null>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
+
+  // Up to 50 wrapped lines; afterwards the composer scrolls.
+  const isMultiline = useAutosizeTextarea(inputRef, draft, { maxRows: 50 })
 
   const counts = useMemo(
     () => ({
@@ -76,9 +77,25 @@ export function TodosView(): React.JSX.Element {
     [visibleTodos]
   )
 
-  const draggedTodo = dragId
-    ? (data.todos.find((todo) => todo.id === dragId) ?? null)
-    : null
+  const drag = useTodoDrag((todo, result) => {
+    const siblings = visibleTodos.filter(
+      (item) => item.priority === result.priority && item.id !== todo.id
+    )
+    if (siblings.length === 0) return
+    const index = Math.min(Math.max(result.index, 0), siblings.length)
+    if (index < siblings.length) {
+      reorderTodo(todo.id, siblings[index].id, 'before')
+    } else {
+      reorderTodo(todo.id, siblings[siblings.length - 1].id, 'after')
+    }
+  })
+
+  useFlipLayout('.todo-list')
+
+  function runUnlessDragged(action: () => void): void {
+    if (drag.justDragged()) return
+    action()
+  }
 
   const completion = counts.all === 0 ? 0 : Math.round((counts.done / counts.all) * 100)
 
@@ -121,46 +138,6 @@ export function TodosView(): React.JSX.Element {
     reorderTodo(todo.id, neighbor.id, direction === 'up' ? 'before' : 'after')
   }
 
-  function handleDragStart(event: React.DragEvent<HTMLDivElement>, todo: Todo): void {
-    setDragId(todo.id)
-    setDropTarget(null)
-    event.dataTransfer.effectAllowed = 'move'
-    event.dataTransfer.setData('application/x-qimu-todo', todo.id)
-  }
-
-  function handleDragOver(event: React.DragEvent<HTMLDivElement>, todo: Todo): void {
-    if (!draggedTodo || draggedTodo.id === todo.id || draggedTodo.priority !== todo.priority) {
-      event.dataTransfer.dropEffect = 'none'
-      return
-    }
-
-    event.preventDefault()
-    event.dataTransfer.dropEffect = 'move'
-    const rect = event.currentTarget.getBoundingClientRect()
-    const position: DropPosition = event.clientY < rect.top + rect.height / 2 ? 'before' : 'after'
-    setDropTarget((current) =>
-      current?.id === todo.id && current.position === position
-        ? current
-        : { id: todo.id, position }
-    )
-  }
-
-  function handleDrop(event: React.DragEvent<HTMLDivElement>, todo: Todo): void {
-    event.preventDefault()
-    const moving = draggedTodo
-    const rect = event.currentTarget.getBoundingClientRect()
-    const position: DropPosition = event.clientY < rect.top + rect.height / 2 ? 'before' : 'after'
-    setDragId(null)
-    setDropTarget(null)
-    if (!moving || moving.id === todo.id || moving.priority !== todo.priority) return
-    reorderTodo(moving.id, todo.id, position)
-  }
-
-  function clearDrag(): void {
-    setDragId(null)
-    setDropTarget(null)
-  }
-
   const filterEmpty =
     filter === 'done'
       ? { title: '还没有完成的事', description: '完成一件待办，它会安静地来到这里。' }
@@ -187,18 +164,31 @@ export function TodosView(): React.JSX.Element {
         }
       />
 
-      <form className="todo-composer" onSubmit={handleSubmit}>
+      <form
+        className={cn('todo-composer', isMultiline && 'is-multiline')}
+        onSubmit={handleSubmit}
+      >
         <span className="todo-composer__icon" aria-hidden="true">
           <Plus size={18} />
         </span>
-        <input
+        <textarea
           ref={inputRef}
           value={draft}
           maxLength={500}
+          rows={1}
           className="todo-composer__input"
           placeholder="接下来要做什么？"
           aria-label="新的待办事项"
+          title="Enter 添加，Shift + Enter 换行"
           onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key !== 'Enter' || event.shiftKey) return
+            // Enter adds the todo; Shift + Enter keeps the newline. Never
+            // submit while an IME is still composing.
+            if (event.nativeEvent.isComposing) return
+            event.preventDefault()
+            event.currentTarget.form?.requestSubmit()
+          }}
         />
 
         <div className="todo-priority-picker" role="group" aria-label="新待办优先级">
@@ -224,10 +214,13 @@ export function TodosView(): React.JSX.Element {
           })}
         </div>
 
-        <span className="todo-composer__hint" aria-hidden="true">
-          Enter
-        </span>
-        <Button type="submit" variant="primary" size="sm" disabled={!draft.trim()}>
+        <Button
+          type="submit"
+          variant="primary"
+          size="sm"
+          className="todo-composer__submit"
+          disabled={!draft.trim()}
+        >
           添加
         </Button>
       </form>
@@ -267,6 +260,23 @@ export function TodosView(): React.JSX.Element {
         <div className="todo-groups">
           {groups.map(({ priority, todos }) => {
             const meta = TODO_PRIORITY_META[priority]
+            const isDraggingHere =
+              drag.draggingId !== null && todos.some((todo) => todo.id === drag.draggingId)
+            const visibleRows = isDraggingHere
+              ? todos.filter((todo) => todo.id !== drag.draggingId)
+              : todos
+            const liveIndex =
+              isDraggingHere && drag.livePreview?.priority === priority
+                ? Math.min(Math.max(drag.livePreview.index, 0), visibleRows.length)
+                : null
+
+            const items: TodoRowItem[] = []
+            visibleRows.forEach((todo, index) => {
+              if (liveIndex === index) items.push({ kind: 'placeholder' })
+              items.push({ kind: 'todo', todo })
+            })
+            if (liveIndex === visibleRows.length) items.push({ kind: 'placeholder' })
+
             return (
               <section
                 key={priority}
@@ -284,25 +294,33 @@ export function TodosView(): React.JSX.Element {
                 </header>
 
                 <div className="todo-list">
-                  {todos.map((todo) => (
-                    <TodoItem
-                      key={todo.id}
-                      todo={todo}
-                      dragging={dragId === todo.id}
-                      dropPosition={dropTarget?.id === todo.id ? dropTarget.position : null}
-                      onToggle={() => toggleTodo(todo.id)}
-                      onRename={(title) => renameTodo(todo.id, title)}
-                      onPriorityChange={(nextPriority) => setTodoPriority(todo.id, nextPriority)}
-                      onCopy={() => void copyTodo(todo)}
-                      onMoveUp={() => moveWithinPriority(todo.id, 'up')}
-                      onMoveDown={() => moveWithinPriority(todo.id, 'down')}
-                      onRemove={() => removeTodo(todo.id)}
-                      onDragStart={(event) => handleDragStart(event, todo)}
-                      onDragOver={(event) => handleDragOver(event, todo)}
-                      onDrop={(event) => handleDrop(event, todo)}
-                      onDragEnd={clearDrag}
-                    />
-                  ))}
+                  {items.map((item) =>
+                    item.kind === 'placeholder' ? (
+                      <div
+                        key="todo-drop-placeholder"
+                        className="todo-item todo-item--placeholder"
+                        data-flip-id="todo-drop-placeholder"
+                        style={{ height: drag.preview?.height }}
+                        aria-hidden="true"
+                      />
+                    ) : (
+                      <TodoItem
+                        key={item.todo.id}
+                        todo={item.todo}
+                        onToggle={() => runUnlessDragged(() => toggleTodo(item.todo.id))}
+                        onRename={(title) => renameTodo(item.todo.id, title)}
+                        onPriorityChange={(nextPriority) => {
+                          if (!drag.justDragged()) setTodoPriority(item.todo.id, nextPriority)
+                        }}
+                        onCopy={() => runUnlessDragged(() => void copyTodo(item.todo))}
+                        onMoveUp={() => moveWithinPriority(item.todo.id, 'up')}
+                        onMoveDown={() => moveWithinPriority(item.todo.id, 'down')}
+                        onRemove={() => runUnlessDragged(() => removeTodo(item.todo.id))}
+                        onPressStart={(event) => drag.beginPress(event, item.todo)}
+                        shouldIgnoreClick={drag.justDragged}
+                      />
+                    )
+                  )}
                 </div>
               </section>
             )
@@ -333,6 +351,10 @@ export function TodosView(): React.JSX.Element {
           />
         </div>
       )}
+
+      {drag.preview ? (
+        <TodoDragPreview preview={drag.preview} previewRef={drag.previewRef} />
+      ) : null}
 
       <ConfirmDialog
         open={confirmClear}

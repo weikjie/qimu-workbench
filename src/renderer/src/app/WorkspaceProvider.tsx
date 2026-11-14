@@ -11,15 +11,9 @@ import {
 } from 'react'
 import { EMPTY_WORKSPACE } from '@shared/defaults'
 import { DEFAULT_TODO_PRIORITY, type TodoPriority } from '@shared/priorities'
-import type { QuickLink, SaveState, WorkspaceData } from '@shared/types'
+import type { QuickLink, QuickLinkGroup, QuickLinkInput, SaveState, WorkspaceData } from '@shared/types'
 import { createId } from '../lib/id'
 import { desktop } from '../services/desktop'
-
-interface AddLinkInput {
-  title: string
-  url: string
-  browserId: string | null
-}
 
 type WorkspaceAction =
   | { type: 'hydrate'; data: WorkspaceData }
@@ -31,8 +25,18 @@ type WorkspaceAction =
   | { type: 'todo/remove'; id: string }
   | { type: 'todo/clearCompleted' }
   | { type: 'link/add'; link: QuickLink }
-  | { type: 'link/update'; id: string; input: AddLinkInput }
+  | { type: 'link/update'; id: string; input: QuickLinkInput }
   | { type: 'link/remove'; id: string }
+  | {
+      type: 'link/reorder'
+      id: string
+      targetId: string | null
+      position: 'before' | 'after'
+      groupId: string | null
+    }
+  | { type: 'linkGroup/add'; group: QuickLinkGroup }
+  | { type: 'linkGroup/rename'; id: string; name: string }
+  | { type: 'linkGroup/remove'; id: string }
   | { type: 'note/add'; id: string; now: string }
   | { type: 'note/update'; id: string; patch: { title?: string; content?: string }; now: string }
   | { type: 'note/remove'; id: string }
@@ -94,13 +98,56 @@ function reducer(state: WorkspaceData, action: WorkspaceAction): WorkspaceData {
                 ...link,
                 title: action.input.title,
                 url: action.input.url,
-                browserId: action.input.browserId
+                browserId: action.input.browserId,
+                groupId: action.input.groupId
               }
             : link
         )
       }
     case 'link/remove':
       return { ...state, links: state.links.filter((link) => link.id !== action.id) }
+    case 'link/reorder': {
+      const moving = state.links.find((link) => link.id === action.id)
+      if (!moving || moving.id === action.targetId) return state
+
+      const remaining = state.links.filter((link) => link.id !== action.id)
+      let insertAt: number
+
+      if (action.targetId) {
+        const targetIndex = remaining.findIndex((link) => link.id === action.targetId)
+        if (targetIndex < 0 || remaining[targetIndex].groupId !== action.groupId) return state
+        insertAt = action.position === 'before' ? targetIndex : targetIndex + 1
+      } else {
+        // Dropped onto the group itself: append after that group's last card.
+        let lastIndex = -1
+        remaining.forEach((link, index) => {
+          if (link.groupId === action.groupId) lastIndex = index
+        })
+        insertAt = lastIndex < 0 ? remaining.length : lastIndex + 1
+      }
+
+      const updated = moving.groupId === action.groupId ? moving : { ...moving, groupId: action.groupId }
+      const links = [...remaining.slice(0, insertAt), updated, ...remaining.slice(insertAt)]
+      return links.every((link, index) => link === state.links[index]) ? state : { ...state, links }
+    }
+    case 'linkGroup/add':
+      return { ...state, linkGroups: [...state.linkGroups, action.group] }
+    case 'linkGroup/rename':
+      return {
+        ...state,
+        linkGroups: state.linkGroups.map((group) =>
+          group.id === action.id ? { ...group, name: action.name } : group
+        )
+      }
+    case 'linkGroup/remove':
+      return {
+        ...state,
+        linkGroups: state.linkGroups.filter((group) => group.id !== action.id),
+        // Keep the links themselves; only their grouping is dissolved.
+        links: state.links.map((link) =>
+          link.groupId === action.id ? { ...link, groupId: null } : link
+        )
+      }
     case 'note/add': {
       const note = {
         id: action.id,
@@ -143,9 +190,18 @@ interface WorkspaceContextValue {
   reorderTodo: (id: string, targetId: string, position: 'before' | 'after') => void
   removeTodo: (id: string) => void
   clearCompleted: () => void
-  addLink: (input: AddLinkInput) => void
-  updateLink: (id: string, input: AddLinkInput) => void
+  addLink: (input: QuickLinkInput) => void
+  updateLink: (id: string, input: QuickLinkInput) => void
   removeLink: (id: string) => void
+  reorderLink: (
+    id: string,
+    targetId: string | null,
+    position: 'before' | 'after',
+    groupId: string | null
+  ) => void
+  addLinkGroup: (name: string) => string | null
+  renameLinkGroup: (id: string, name: string) => void
+  removeLinkGroup: (id: string) => void
   addNote: () => string
   updateNote: (id: string, patch: { title?: string; content?: string }) => void
   removeNote: (id: string) => void
@@ -291,7 +347,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }): React.
     dispatch({ type: 'todo/clearCompleted' })
   }, [])
 
-  const addLink = useCallback((input: AddLinkInput): void => {
+  const addLink = useCallback((input: QuickLinkInput): void => {
     dispatch({
       type: 'link/add',
       link: {
@@ -299,17 +355,46 @@ export function WorkspaceProvider({ children }: { children: ReactNode }): React.
         title: input.title.slice(0, 200),
         url: input.url,
         browserId: input.browserId,
+        groupId: input.groupId,
         createdAt: new Date().toISOString()
       }
     })
   }, [])
 
-  const updateLink = useCallback((id: string, input: AddLinkInput): void => {
+  const updateLink = useCallback((id: string, input: QuickLinkInput): void => {
     dispatch({ type: 'link/update', id, input })
   }, [])
 
   const removeLink = useCallback((id: string): void => {
     dispatch({ type: 'link/remove', id })
+  }, [])
+
+  const reorderLink = useCallback(
+    (id: string, targetId: string | null, position: 'before' | 'after', groupId: string | null): void => {
+      dispatch({ type: 'link/reorder', id, targetId, position, groupId })
+    },
+    []
+  )
+
+  const addLinkGroup = useCallback((name: string): string | null => {
+    const clean = name.trim().slice(0, 60)
+    if (!clean) return null
+    const id = createId('link-group')
+    dispatch({
+      type: 'linkGroup/add',
+      group: { id, name: clean, createdAt: new Date().toISOString() }
+    })
+    return id
+  }, [])
+
+  const renameLinkGroup = useCallback((id: string, name: string): void => {
+    const clean = name.trim().slice(0, 60)
+    if (!clean) return
+    dispatch({ type: 'linkGroup/rename', id, name: clean })
+  }, [])
+
+  const removeLinkGroup = useCallback((id: string): void => {
+    dispatch({ type: 'linkGroup/remove', id })
   }, [])
 
   const addNote = useCallback((): string => {
@@ -342,6 +427,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }): React.
       addLink,
       updateLink,
       removeLink,
+      reorderLink,
+      addLinkGroup,
+      renameLinkGroup,
+      removeLinkGroup,
       addNote,
       updateNote,
       removeNote,
@@ -362,6 +451,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }): React.
       addLink,
       updateLink,
       removeLink,
+      reorderLink,
+      addLinkGroup,
+      renameLinkGroup,
+      removeLinkGroup,
       addNote,
       updateNote,
       removeNote,

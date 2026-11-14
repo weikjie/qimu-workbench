@@ -5,13 +5,12 @@ import type { Todo } from '@shared/types'
 import { cn } from '../../lib/cn'
 import { formatRelativeTime } from '../../lib/format'
 import { TODO_PRIORITY_META } from '../../lib/todo-priority'
+import { useAutosizeTextarea } from '../../hooks/useAutosizeTextarea'
 import { IconButton } from '../../components/ui/IconButton'
 import { RoundCheckbox } from '../../components/ui/RoundCheckbox'
 
 interface TodoItemProps {
   todo: Todo
-  dragging: boolean
-  dropPosition: 'before' | 'after' | null
   onToggle: () => void
   onRename: (title: string) => void
   onPriorityChange: (priority: TodoPriority) => void
@@ -19,16 +18,13 @@ interface TodoItemProps {
   onMoveUp: () => void
   onMoveDown: () => void
   onRemove: () => void
-  onDragStart: (event: React.DragEvent<HTMLDivElement>) => void
-  onDragOver: (event: React.DragEvent<HTMLDivElement>) => void
-  onDrop: (event: React.DragEvent<HTMLDivElement>) => void
-  onDragEnd: () => void
+  onPressStart: (event: React.PointerEvent<HTMLElement>) => void
+  /** Ignore the click that follows a drag. */
+  shouldIgnoreClick?: () => boolean
 }
 
 export function TodoItem({
   todo,
-  dragging,
-  dropPosition,
   onToggle,
   onRename,
   onPriorityChange,
@@ -36,15 +32,14 @@ export function TodoItem({
   onMoveUp,
   onMoveDown,
   onRemove,
-  onDragStart,
-  onDragOver,
-  onDrop,
-  onDragEnd
+  onPressStart,
+  shouldIgnoreClick
 }: TodoItemProps): React.JSX.Element {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(todo.title)
-  const inputRef = useRef<HTMLInputElement>(null)
-  const dragBlockedRef = useRef(false)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
+
+  useAutosizeTextarea(inputRef, draft, { maxRows: 50, enabled: editing })
 
   useEffect(() => {
     if (!editing) return
@@ -70,32 +65,10 @@ export function TodoItem({
 
   return (
     <div
-      className={cn(
-        'todo-item',
-        todo.done && 'is-done',
-        editing && 'is-editing',
-        dragging && 'is-dragging',
-        dropPosition === 'before' && 'is-drop-before',
-        dropPosition === 'after' && 'is-drop-after'
-      )}
-      draggable={!editing}
-      onPointerDown={(event) => {
-        // Buttons and fields keep their normal behavior; only the row's drag
-        // handle (and empty space) starts a drag.
-        dragBlockedRef.current = Boolean(
-          (event.target as HTMLElement).closest('button, input, select, a')
-        )
-      }}
-      onDragStart={(event) => {
-        if (dragBlockedRef.current) {
-          event.preventDefault()
-          return
-        }
-        onDragStart(event)
-      }}
-      onDragOver={onDragOver}
-      onDrop={onDrop}
-      onDragEnd={onDragEnd}
+      className={cn('todo-item', todo.done && 'is-done', editing && 'is-editing')}
+      data-todo-row={todo.id}
+      data-flip-id={todo.id}
+      onPointerDown={editing ? undefined : (event) => onPressStart(event)}
     >
       {editing ? (
         <span className="todo-item__drag" aria-hidden="true" />
@@ -128,15 +101,17 @@ export function TodoItem({
 
       {editing ? (
         <div className="todo-edit">
-          <input
+          <textarea
             ref={inputRef}
             value={draft}
             maxLength={500}
+            rows={1}
             aria-label="编辑待办内容"
             className="todo-edit__input"
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={(event) => {
-              if (event.key === 'Enter') {
+              if (event.nativeEvent.isComposing) return
+              if (event.key === 'Enter' && !event.shiftKey) {
                 event.preventDefault()
                 commit()
               }
@@ -153,7 +128,7 @@ export function TodoItem({
         </div>
       ) : (
         <>
-          <span className="todo-priority-select" data-priority={todo.priority}>
+          <span className="todo-priority-select" data-priority={todo.priority} data-no-drag>
             <select
               className="todo-priority-select__input"
               value={todo.priority}
@@ -184,7 +159,7 @@ export function TodoItem({
             </span>
           </button>
 
-          <div className="todo-item__actions">
+          <div className="todo-item__actions" data-no-drag>
             <IconButton
               label={`复制「${todo.title}」`}
               icon={<Copy size={14} />}
@@ -195,7 +170,10 @@ export function TodoItem({
               label={`编辑「${todo.title}」`}
               icon={<Pencil size={14} />}
               size="sm"
-              onClick={beginEdit}
+              onClick={() => {
+                if (shouldIgnoreClick?.()) return
+                beginEdit()
+              }}
             />
             <IconButton
               label={`删除「${todo.title}」`}

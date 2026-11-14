@@ -28,10 +28,12 @@ import {
   writeNoteFile,
   writeNoteFileSync
 } from './note-files'
-import type { MarkdownNote, QuickLink, Todo, WorkspaceData } from '../shared/types'
+import type { MarkdownNote, QuickLink, QuickLinkGroup, Todo, WorkspaceData } from '../shared/types'
 
 const MAX_TODOS = 5000
 const MAX_LINKS = 2000
+const MAX_LINK_GROUPS = 100
+const MAX_LINK_GROUP_NAME = 60
 const MAX_NOTES = 2000
 
 interface PersistedNote {
@@ -43,9 +45,10 @@ interface PersistedNote {
 }
 
 interface PersistedWorkspace {
-  version: 2
+  version: 3
   todos: Todo[]
   links: QuickLink[]
+  linkGroups: QuickLinkGroup[]
   notes: PersistedNote[]
 }
 
@@ -124,7 +127,27 @@ function sanitizeTodos(input: unknown): Todo[] {
     .filter((item): item is Todo => item !== null)
 }
 
-function sanitizeLinks(input: unknown): QuickLink[] {
+function sanitizeLinkGroups(input: unknown): QuickLinkGroup[] {
+  if (!Array.isArray(input)) return []
+  const now = new Date().toISOString()
+  const usedIds = new Set<string>()
+  const groups: QuickLinkGroup[] = []
+
+  for (const value of input.slice(0, MAX_LINK_GROUPS)) {
+    const item = record(value)
+    if (!item) continue
+    const name = text(item.name).trim().slice(0, MAX_LINK_GROUP_NAME)
+    if (!name) continue
+    let id = text(item.id).slice(0, 100) || crypto.randomUUID()
+    while (usedIds.has(id)) id = crypto.randomUUID()
+    usedIds.add(id)
+    groups.push({ id, name, createdAt: isoDate(item.createdAt, now) })
+  }
+
+  return groups
+}
+
+function sanitizeLinks(input: unknown, groupIds: ReadonlySet<string>): QuickLink[] {
   if (!Array.isArray(input)) return []
   const now = new Date().toISOString()
   return input
@@ -136,11 +159,14 @@ function sanitizeLinks(input: unknown): QuickLink[] {
       const url = normalizeHttpUrl(text(item.url))
       if (!title || !url) return null
       const browserId = typeof item.browserId === 'string' && item.browserId ? item.browserId : null
+      const storedGroupId = typeof item.groupId === 'string' ? item.groupId : ''
       return {
         id: text(item.id) || crypto.randomUUID(),
         title: title.slice(0, 200),
         url,
         browserId: browserId?.slice(0, 100) ?? null,
+        // A group that no longer exists must not keep a dangling reference.
+        groupId: storedGroupId && groupIds.has(storedGroupId) ? storedGroupId : null,
         createdAt: isoDate(item.createdAt, now)
       }
     })
@@ -173,10 +199,12 @@ function sanitizeNotes(input: unknown): MarkdownNote[] {
 export function sanitizeWorkspace(input: unknown): WorkspaceData {
   const root = record(input)
   if (!root) return createDefaultWorkspace()
+  const linkGroups = sanitizeLinkGroups(root.linkGroups)
   return {
     version: 1,
     todos: sanitizeTodos(root.todos),
-    links: sanitizeLinks(root.links),
+    links: sanitizeLinks(root.links, new Set(linkGroups.map((group) => group.id))),
+    linkGroups,
     notes: sanitizeNotes(root.notes)
   }
 }
@@ -310,7 +338,9 @@ export async function loadWorkspace(): Promise<WorkspaceData> {
   trackedNotes.clear()
   const root = await loadWorkspaceRoot()
 
-  if (!root || root.version !== 2) {
+  // Version 2 workspaces predate quick-link groups; reading them here migrates
+  // their links into the ungrouped list on the next save.
+  if (!root || (root.version !== 2 && root.version !== 3)) {
     const fallback = createDefaultWorkspace()
     const recovered = await recoverNotesFromDirectory()
     const notes = recovered.length > 0 ? recovered : await seedNoteFiles(fallback.notes)
@@ -318,6 +348,7 @@ export async function loadWorkspace(): Promise<WorkspaceData> {
       version: 1,
       todos: fallback.todos,
       links: fallback.links,
+      linkGroups: fallback.linkGroups,
       notes
     }
     await persistWorkspaceMetadata(data).catch((error) => {
@@ -329,10 +360,12 @@ export async function loadWorkspace(): Promise<WorkspaceData> {
 
   const notes = await hydrateStoredNotes(root.notes)
   await pruneNoteImagesForLoadedNotes(notes)
+  const linkGroups = sanitizeLinkGroups(root.linkGroups)
   return {
     version: 1,
     todos: sanitizeTodos(root.todos),
-    links: sanitizeLinks(root.links),
+    links: sanitizeLinks(root.links, new Set(linkGroups.map((group) => group.id))),
+    linkGroups,
     notes
   }
 }
@@ -447,7 +480,7 @@ function buildPersistedWorkspace(data: WorkspaceData, files: Map<string, string>
     }
   })
 
-  return { version: 2, todos: data.todos, links: data.links, notes }
+  return { version: 3, todos: data.todos, links: data.links, linkGroups: data.linkGroups, notes }
 }
 
 async function writePersistedJson(persisted: PersistedWorkspace): Promise<void> {

@@ -1,22 +1,19 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
-import { ChevronDown, Globe2 } from 'lucide-react'
-import type { BrowserInfo, QuickLink } from '@shared/types'
+import { ChevronDown, Folder, Globe2 } from 'lucide-react'
+import type { BrowserInfo, QuickLink, QuickLinkGroup, QuickLinkInput } from '@shared/types'
 import { Button } from '../../components/ui/Button'
 import { Modal } from '../../components/ui/Modal'
 import { getHostname, normalizeUrlInput } from '../../lib/url'
-
-interface LinkInput {
-  title: string
-  url: string
-  browserId: string | null
-}
 
 interface LinkDialogProps {
   open: boolean
   link: QuickLink | null
   browsers: BrowserInfo[]
   browsersLoading: boolean
-  onSave: (input: LinkInput) => void
+  groups: QuickLinkGroup[]
+  /** Group preselected when a link is added from inside a group section. */
+  defaultGroupId: string | null
+  onSave: (input: QuickLinkInput) => void
   onClose: () => void
 }
 
@@ -25,6 +22,8 @@ export function LinkDialog({
   link,
   browsers,
   browsersLoading,
+  groups,
+  defaultGroupId,
   onSave,
   onClose
 }: LinkDialogProps): React.JSX.Element {
@@ -32,6 +31,7 @@ export function LinkDialog({
   const [title, setTitle] = useState('')
   const [url, setUrl] = useState('')
   const [browserId, setBrowserId] = useState('default')
+  const [groupId, setGroupId] = useState('')
   const [error, setError] = useState('')
   const urlRef = useRef<HTMLInputElement>(null)
 
@@ -40,8 +40,9 @@ export function LinkDialog({
     setTitle(link?.title ?? '')
     setUrl(link?.url ?? '')
     setBrowserId(link?.browserId ?? 'default')
+    setGroupId(link?.groupId ?? defaultGroupId ?? '')
     setError('')
-  }, [open, link])
+  }, [open, link, defaultGroupId])
 
   function handleSubmit(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault()
@@ -54,10 +55,12 @@ export function LinkDialog({
 
     const cleanTitle = title.trim() || getHostname(normalized)
     const browserStillInstalled = browsers.some((browser) => browser.id === browserId)
+    const groupStillExists = groups.some((group) => group.id === groupId)
     onSave({
       title: cleanTitle.slice(0, 200),
       url: normalized,
-      browserId: browserStillInstalled ? browserId : null
+      browserId: browserStillInstalled ? browserId : null,
+      groupId: groupStillExists ? groupId : null
     })
     onClose()
   }
@@ -69,6 +72,8 @@ export function LinkDialog({
   }
 
   const knownBrowserExists = browserId === 'default' || browsers.some((browser) => browser.id === browserId)
+  const knownGroupExists = groupId === '' || groups.some((group) => group.id === groupId)
+  const hasGroups = groups.length > 0
 
   return (
     <Modal
@@ -77,7 +82,7 @@ export function LinkDialog({
       title={link ? '编辑快捷链接' : '添加快捷链接'}
       description={
         link
-          ? '调整名称、地址或默认打开方式。'
+          ? '调整名称、地址、分组或默认打开方式。'
           : '把常去的网页放在触手可及的地方。'
       }
       footer={
@@ -121,6 +126,31 @@ export function LinkDialog({
             onBlur={fillTitleFromUrl}
           />
           <span className="field__hint">如果不写前缀，会自动补全为 https://。</span>
+        </label>
+
+        <label className="field">
+          <span className="field__label">所属分组</span>
+          <span className="select-wrap">
+            <Folder size={15} className="select-wrap__icon" aria-hidden="true" />
+            <select
+              className="field__input field__select"
+              value={knownGroupExists ? groupId : ''}
+              onChange={(event) => setGroupId(event.target.value)}
+            >
+              <option value="">未分组</option>
+              {groups.map((group) => (
+                <option key={group.id} value={group.id}>
+                  {group.name}
+                </option>
+              ))}
+            </select>
+            <ChevronDown size={15} className="select-wrap__chevron" aria-hidden="true" />
+          </span>
+          <span className="field__hint">
+            {hasGroups
+              ? '分组可以在快捷链接页随时创建和调整。'
+              : '还没有分组，可以先在快捷链接页创建一个。'}
+          </span>
         </label>
 
         <label className="field">

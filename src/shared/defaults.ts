@@ -109,6 +109,7 @@ export function createDefaultWorkspace(now = Date.now()): WorkspaceData {
         title: 'GitHub',
         url: 'https://github.com',
         browserId: null,
+        groupId: null,
         createdAt: iso(DAY * 2)
       },
       {
@@ -116,6 +117,7 @@ export function createDefaultWorkspace(now = Date.now()): WorkspaceData {
         title: 'DeepSeek',
         url: 'https://chat.deepseek.com',
         browserId: null,
+        groupId: null,
         createdAt: iso(DAY * 2)
       },
       {
@@ -123,6 +125,7 @@ export function createDefaultWorkspace(now = Date.now()): WorkspaceData {
         title: 'Figma',
         url: 'https://www.figma.com',
         browserId: null,
+        groupId: null,
         createdAt: iso(DAY * 2)
       },
       {
@@ -130,9 +133,11 @@ export function createDefaultWorkspace(now = Date.now()): WorkspaceData {
         title: 'MDN Web Docs',
         url: 'https://developer.mozilla.org',
         browserId: null,
+        groupId: null,
         createdAt: iso(DAY * 2)
       }
     ],
+    linkGroups: [],
     notes: [
       {
         id: 'seed-note-welcome',
@@ -156,5 +161,6 @@ export const EMPTY_WORKSPACE: WorkspaceData = {
   version: 1,
   todos: [],
   links: [],
+  linkGroups: [],
   notes: []
 }
