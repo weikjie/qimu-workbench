@@ -48,6 +48,7 @@ const api: WorkbenchApi = {
       ipcRenderer.send(IPC.screenshotLockDisplay, { sessionId, displayId }),
     finish: (input) => ipcRenderer.invoke(IPC.screenshotFinish, input),
     cancel: (sessionId) => ipcRenderer.send(IPC.screenshotCancel, { sessionId }),
+    copyText: (text) => ipcRenderer.invoke(IPC.screenshotCopyText, { text }),
     getPinContext: (id) => ipcRenderer.invoke(IPC.screenshotPinContext, { id }),
     pinAction: (input) => ipcRenderer.invoke(IPC.screenshotPinAction, input),
     pinMove: (input) => ipcRenderer.send(IPC.screenshotPinMove, input),

@@ -29,6 +29,7 @@ import type { OpenResult } from '../shared/types'
 const PRELOAD_PATH = join(__dirname, '../preload/index.js')
 const RENDERER_HTML = join(__dirname, '../renderer/index.html')
 const MAX_PNG_BYTES = 128 * 1024 * 1024
+const COLOR_VALUE = /^(#[0-9a-fA-F]{6}|rgb\(\d{1,3}, \d{1,3}, \d{1,3}\))$/
 
 interface FrozenDisplay {
   info: ScreenshotDisplayInfo
@@ -214,6 +215,14 @@ function sessionSender(sender: WebContents, sessionId: string): CaptureSession |
     if (overlay.webContents === sender) return session
   }
   return null
+}
+
+function isOverlaySender(sender: WebContents): boolean {
+  if (!session) return false
+  for (const overlay of session.overlays.values()) {
+    if (!overlay.isDestroyed() && overlay.webContents === sender) return true
+  }
+  return false
 }
 
 function focusActiveOverlay(target: CaptureSession): void {
@@ -800,6 +809,20 @@ export function registerScreenshotIpc(deps: {
     const current = sessionSender(event.sender, sessionId)
     if (!current) return
     closeSession(current)
+  })
+
+  ipcMain.handle(IPC.screenshotCopyText, async (event, payload) => {
+    if (!isOverlaySender(event.sender)) return { ok: false, message: '截图窗口已关闭。' }
+    const input = objectOf(payload)
+    const text = stringOf(input?.['text'], 64)
+    if (!text || !COLOR_VALUE.test(text)) return { ok: false, message: '色值无效。' }
+    try {
+      await clipboard.writeText(text)
+      return { ok: true }
+    } catch (error) {
+      console.warn('[workbench] could not copy screenshot color:', error)
+      return { ok: false, message: '无法写入剪贴板。' }
+    }
   })
 
   ipcMain.handle(IPC.screenshotPinContext, async (event, payload) => {

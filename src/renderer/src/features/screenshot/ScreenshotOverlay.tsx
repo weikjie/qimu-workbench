@@ -17,6 +17,7 @@ import type {
 } from '@shared/screenshot'
 import { cn } from '../../lib/cn'
 import { screenshotBridge } from '../../services/desktop'
+import { ScreenshotMagnifier } from './ScreenshotMagnifier'
 import { ScreenshotToolbar } from './ScreenshotToolbar'
 import {
   canvasToPngBlob,
@@ -164,6 +165,7 @@ export function ScreenshotOverlay({
   const [busy, setBusy] = useState<ScreenshotAction | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [toolbarPos, setToolbarPos] = useState<{ left: number; top: number } | null>(null)
+  const [cursor, setCursor] = useState<ScreenshotPoint | null>(null)
 
   const valid = Boolean(sessionId) && Number.isFinite(displayId)
 
@@ -418,7 +420,10 @@ export function ScreenshotOverlay({
   const handlePointerMove = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
       const drag = dragRef.current
-      if (!drag || drag.pointerId !== event.pointerId) return
+      if (!drag || drag.pointerId !== event.pointerId) {
+        if (phase === 'select') setCursor(pointFromEvent(event))
+        return
+      }
       const point = pointFromEvent(event)
 
       if (drag.kind === 'select') {
@@ -432,7 +437,14 @@ export function ScreenshotOverlay({
       draftRef.current = next
       setDraft(next)
     },
-    [pointFromEvent]
+    [phase, pointFromEvent]
+  )
+
+  const handlePointerEnter = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      if (phase === 'select' && !dragRef.current) setCursor(pointFromEvent(event))
+    },
+    [phase, pointFromEvent]
   )
 
   const finishPointer = useCallback(
@@ -725,6 +737,8 @@ export function ScreenshotOverlay({
       )}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
+      onPointerEnter={handlePointerEnter}
+      onPointerLeave={() => setCursor(null)}
       onPointerUp={(event) => finishPointer(event, false)}
       onPointerCancel={(event) => finishPointer(event, true)}
       onContextMenu={(event) => event.preventDefault()}
@@ -736,6 +750,10 @@ export function ScreenshotOverlay({
       ))}
 
       <canvas ref={canvasRef} className="shot-annotations" aria-hidden="true" />
+
+      {phase === 'select' && cursor && !selection ? (
+        <ScreenshotMagnifier image={image} viewport={viewport} cursor={cursor} />
+      ) : null}
 
       {selectionStyle ? (
         <div

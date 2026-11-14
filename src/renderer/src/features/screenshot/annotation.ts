@@ -4,6 +4,10 @@ export const TEXT_FONT_FAMILY =
   '"MiSans", "HarmonyOS Sans SC", "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif'
 export const TEXT_LINE_HEIGHT = 1.3
 
+/** Insets of the text editor's content box: 1px border + 1px/2px padding. */
+const TEXT_INPUT_INSET_X = 3
+const TEXT_INPUT_INSET_Y = 2
+
 export interface RectangleAnnotation {
   id: string
   type: 'rectangle'
@@ -396,10 +400,24 @@ function drawAnnotation(
       const fontSize = Math.max(8, annotation.fontSize)
       const lineHeight = fontSize * TEXT_LINE_HEIGHT
       ctx.fillStyle = annotation.color
-      ctx.textBaseline = 'top'
       ctx.font = `600 ${fontSize}px ${TEXT_FONT_FAMILY}`
+      // Match the browser's line-box baseline inside .shot-text-input instead
+      // of drawing from the em top, otherwise committed text jumps upward.
+      const metrics = ctx.measureText('Mg')
+      const ascent = metrics.fontBoundingBoxAscent || fontSize * 0.8
+      const descent = metrics.fontBoundingBoxDescent || fontSize * 0.2
+      const baseline =
+        annotation.point.y +
+        TEXT_INPUT_INSET_Y +
+        (lineHeight - (ascent + descent)) / 2 +
+        ascent
+      ctx.textBaseline = 'alphabetic'
       annotation.text.split('\n').forEach((line, index) => {
-        ctx.fillText(line, annotation.point.x + 2, annotation.point.y + 2 + index * lineHeight)
+        ctx.fillText(
+          line,
+          annotation.point.x + TEXT_INPUT_INSET_X,
+          baseline + index * lineHeight
+        )
       })
       break
     }

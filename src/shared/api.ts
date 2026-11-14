@@ -41,6 +41,7 @@ export const IPC = {
   screenshotLockDisplay: 'screenshot:lock-display',
   screenshotFinish: 'screenshot:finish',
   screenshotCancel: 'screenshot:cancel',
+  screenshotCopyText: 'screenshot:copy-text',
   screenshotPinContext: 'screenshot:pin-context',
   screenshotPinAction: 'screenshot:pin-action',
   screenshotPinMove: 'screenshot:pin-move',
@@ -101,6 +102,8 @@ export interface WorkbenchApi {
     finish(input: ScreenshotFinishInput): Promise<ScreenshotActionResult>
     /** Cancels the whole capture and closes every overlay. */
     cancel(sessionId: string): void
+    /** Copies a color value sampled by the selection overlay. */
+    copyText(text: string): Promise<OpenResult>
     /** Data for one pinned image window. */
     getPinContext(id: string): Promise<ScreenshotPinContext | null>
     pinAction(input: ScreenshotPinActionInput): Promise<ScreenshotPinActionResult>

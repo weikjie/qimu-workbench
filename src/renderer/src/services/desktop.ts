@@ -102,6 +102,9 @@ export const screenshotBridge = {
   cancel(sessionId: string): void {
     bridge().screenshot.cancel(sessionId)
   },
+  copyText(text: string): Promise<OpenResult> {
+    return bridge().screenshot.copyText(text)
+  },
   getPinContext(id: string): Promise<ScreenshotPinContext | null> {
     return bridge().screenshot.getPinContext(id)
   },

@@ -1,6 +1,12 @@
-import { useEffect, useRef, useState, type CSSProperties, type RefObject } from 'react'
 import {
-  ArrowUpRight,
+  useEffect,
+  useRef,
+  useState,
+  type ComponentType,
+  type CSSProperties,
+  type RefObject
+} from 'react'
+import {
   Circle,
   Copy,
   Download,
@@ -18,15 +24,52 @@ import {
 import type { ScreenshotAction, ScreenshotTool } from '@shared/screenshot'
 import { cn } from '../../lib/cn'
 
-const TOOLS = [
+interface ToolIconProps {
+  size?: number
+  strokeWidth?: number
+}
+
+type ToolIconComponent = ComponentType<ToolIconProps>
+
+/**
+ * The stock ArrowUpRight glyph only fills 10/24 of its viewBox, so it reads
+ * smaller than the square/circle tools. This version keeps the same outline
+ * style but spans 16/24 of the viewBox for a balanced toolbar.
+ */
+function ArrowToolIcon({ size = 15, strokeWidth = 1.9 }: ToolIconProps): React.JSX.Element {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path d="M4 20 20 4" />
+      <path d="M9 4h11v11" />
+    </svg>
+  )
+}
+
+const TOOLS: ReadonlyArray<{
+  id: ScreenshotTool
+  label: string
+  shortcut: string
+  icon: ToolIconComponent
+}> = [
   { id: 'rectangle', label: '矩形', shortcut: 'R', icon: Square },
   { id: 'line', label: '直线', shortcut: 'L', icon: Minus },
   { id: 'ellipse', label: '圆形', shortcut: 'E', icon: Circle },
   { id: 'pen', label: '画笔', shortcut: 'P', icon: Pencil },
-  { id: 'arrow', label: '箭头', shortcut: 'A', icon: ArrowUpRight },
+  { id: 'arrow', label: '箭头', shortcut: 'A', icon: ArrowToolIcon },
   { id: 'text', label: '插入文本', shortcut: 'T', icon: Type },
   { id: 'mosaic', label: '马赛克', shortcut: 'M', icon: Grid3x3 }
-] as const satisfies ReadonlyArray<{ id: ScreenshotTool; label: string; shortcut: string; icon: typeof Square }>
+]
 
 const COLORS = [
   '#ff4d4f',
