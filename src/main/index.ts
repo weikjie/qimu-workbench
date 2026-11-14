@@ -17,6 +17,14 @@ import {
 } from './external-files'
 import type { ImageAsset } from './image-files'
 import { readNoteAsset, saveNotePastedImage } from './note-images'
+import {
+  disposeScreenshots,
+  getScreenshotShortcutLabel,
+  registerScreenshotIpc,
+  registerScreenshotShortcut,
+  startScreenshotFromSystem,
+  unregisterScreenshotShortcut
+} from './screenshot'
 import { flushWorkspaceSync, loadWorkspace, queueWorkspaceSave } from './store'
 
 protocol.registerSchemesAsPrivileged([
@@ -66,8 +74,16 @@ function createTray(): void {
   try {
     tray = new Tray(trayIconPath())
     tray.setToolTip('栖木工作台')
+    const shortcut = getScreenshotShortcutLabel()
     tray.setContextMenu(
       Menu.buildFromTemplate([
+        {
+          label: shortcut ? `截图（${shortcut}）` : '截图',
+          click: () => {
+            void startScreenshotFromSystem()
+          }
+        },
+        { type: 'separator' },
         { label: '打开栖木工作台', click: showMainWindow },
         { type: 'separator' },
         {
@@ -289,7 +305,7 @@ function registerIpc(): void {
       return { ok: false, message: '要复制的内容无效。' }
     }
     try {
-      clipboard.writeText(text)
+      await clipboard.writeText(text)
       return { ok: true }
     } catch (error) {
       console.error('[workbench] could not write to clipboard:', error)
@@ -370,6 +386,10 @@ app.whenReady().then(async () => {
   registerExternalAssetProtocol()
   await detectBrowsers()
   registerIpc()
+  registerScreenshotIpc({
+    isMainWindowSender: (sender) => Boolean(mainWindow && sender === mainWindow.webContents)
+  })
+  registerScreenshotShortcut()
   createTray()
   await createWindow()
 
@@ -382,6 +402,11 @@ app.whenReady().then(async () => {
 
 app.on('before-quit', () => {
   isQuitting = true
+  disposeScreenshots()
+})
+
+app.on('will-quit', () => {
+  unregisterScreenshotShortcut()
 })
 
 app.on('second-instance', (_event, commandLine, workingDirectory) => {

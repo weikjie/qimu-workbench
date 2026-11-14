@@ -8,6 +8,17 @@ import type {
   SavePastedImageResult,
   WorkspaceData
 } from './types'
+import type {
+  ScreenshotActionResult,
+  ScreenshotFinishInput,
+  ScreenshotOverlayContext,
+  ScreenshotPinActionInput,
+  ScreenshotPinActionResult,
+  ScreenshotPinContext,
+  ScreenshotPinMoveInput,
+  ScreenshotPinZoomInput,
+  ScreenshotPinZoomResult
+} from './screenshot'
 
 export const IPC = {
   loadWorkspace: 'workspace:load',
@@ -23,7 +34,17 @@ export const IPC = {
   closeExternalFile: 'files:close',
   flushExternalFiles: 'files:flush',
   savePastedImage: 'images:save',
-  copyText: 'clipboard:copy-text'
+  copyText: 'clipboard:copy-text',
+  screenshotStart: 'screenshot:start',
+  screenshotShortcut: 'screenshot:shortcut',
+  screenshotOverlayContext: 'screenshot:overlay-context',
+  screenshotLockDisplay: 'screenshot:lock-display',
+  screenshotFinish: 'screenshot:finish',
+  screenshotCancel: 'screenshot:cancel',
+  screenshotPinContext: 'screenshot:pin-context',
+  screenshotPinAction: 'screenshot:pin-action',
+  screenshotPinMove: 'screenshot:pin-move',
+  screenshotPinZoom: 'screenshot:pin-zoom'
 } as const
 
 /** The small, typed surface exposed to the renderer by the preload bridge. */
@@ -63,5 +84,29 @@ export interface WorkbenchApi {
     flush(inputs: ExternalFileFlushInput[]): void
     /** Fires when the main process has queued new file-open requests. */
     onOpenAvailable(callback: () => void): () => void
+  }
+  screenshot: {
+    /** Starts a capture and opens the selection overlays. */
+    start(): Promise<OpenResult>
+    /** The global shortcut label that was actually registered. */
+    getShortcut(): Promise<string | null>
+    /** Returns the frozen screen and session metadata for one overlay. */
+    getOverlayContext(
+      sessionId: string,
+      displayId: number
+    ): Promise<ScreenshotOverlayContext | null>
+    /** Closes the overlays on every other display once a selection starts. */
+    lockDisplay(sessionId: string, displayId: number): void
+    /** Copies, saves or pins the annotated selection. */
+    finish(input: ScreenshotFinishInput): Promise<ScreenshotActionResult>
+    /** Cancels the whole capture and closes every overlay. */
+    cancel(sessionId: string): void
+    /** Data for one pinned image window. */
+    getPinContext(id: string): Promise<ScreenshotPinContext | null>
+    pinAction(input: ScreenshotPinActionInput): Promise<ScreenshotPinActionResult>
+    /** Moves a pinned image window while the user drags it. */
+    pinMove(input: ScreenshotPinMoveInput): void
+    /** Resizes a pinned image window when the user scrolls its wheel. */
+    pinZoom(input: ScreenshotPinZoomInput): Promise<ScreenshotPinZoomResult>
   }
 }

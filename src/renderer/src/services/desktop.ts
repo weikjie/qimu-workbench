@@ -8,6 +8,17 @@ import type {
   SavePastedImageResult,
   WorkspaceData
 } from '@shared/types'
+import type {
+  ScreenshotActionResult,
+  ScreenshotFinishInput,
+  ScreenshotOverlayContext,
+  ScreenshotPinActionInput,
+  ScreenshotPinActionResult,
+  ScreenshotPinContext,
+  ScreenshotPinMoveInput,
+  ScreenshotPinZoomInput,
+  ScreenshotPinZoomResult
+} from '@shared/screenshot'
 
 /**
  * The only place in the renderer that talks to Electron. Feature modules use
@@ -66,5 +77,41 @@ export const desktop = {
   },
   onOpenFilesAvailable(callback: () => void): () => void {
     return bridge().files.onOpenAvailable(callback)
+  }
+}
+
+export const screenshotBridge = {
+  start(): Promise<OpenResult> {
+    return bridge().screenshot.start()
+  },
+  getShortcut(): Promise<string | null> {
+    return bridge().screenshot.getShortcut()
+  },
+  getOverlayContext(
+    sessionId: string,
+    displayId: number
+  ): Promise<ScreenshotOverlayContext | null> {
+    return bridge().screenshot.getOverlayContext(sessionId, displayId)
+  },
+  lockDisplay(sessionId: string, displayId: number): void {
+    bridge().screenshot.lockDisplay(sessionId, displayId)
+  },
+  finish(input: ScreenshotFinishInput): Promise<ScreenshotActionResult> {
+    return bridge().screenshot.finish(input)
+  },
+  cancel(sessionId: string): void {
+    bridge().screenshot.cancel(sessionId)
+  },
+  getPinContext(id: string): Promise<ScreenshotPinContext | null> {
+    return bridge().screenshot.getPinContext(id)
+  },
+  pinAction(input: ScreenshotPinActionInput): Promise<ScreenshotPinActionResult> {
+    return bridge().screenshot.pinAction(input)
+  },
+  pinMove(input: ScreenshotPinMoveInput): void {
+    bridge().screenshot.pinMove(input)
+  },
+  pinZoom(input: ScreenshotPinZoomInput): Promise<ScreenshotPinZoomResult> {
+    return bridge().screenshot.pinZoom(input)
   }
 }

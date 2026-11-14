@@ -38,6 +38,20 @@ const api: WorkbenchApi = {
       ipcRenderer.on(IPC.externalFilesAvailable, listener)
       return () => ipcRenderer.removeListener(IPC.externalFilesAvailable, listener)
     }
+  },
+  screenshot: {
+    start: () => ipcRenderer.invoke(IPC.screenshotStart),
+    getShortcut: () => ipcRenderer.invoke(IPC.screenshotShortcut),
+    getOverlayContext: (sessionId, displayId) =>
+      ipcRenderer.invoke(IPC.screenshotOverlayContext, { sessionId, displayId }),
+    lockDisplay: (sessionId, displayId) =>
+      ipcRenderer.send(IPC.screenshotLockDisplay, { sessionId, displayId }),
+    finish: (input) => ipcRenderer.invoke(IPC.screenshotFinish, input),
+    cancel: (sessionId) => ipcRenderer.send(IPC.screenshotCancel, { sessionId }),
+    getPinContext: (id) => ipcRenderer.invoke(IPC.screenshotPinContext, { id }),
+    pinAction: (input) => ipcRenderer.invoke(IPC.screenshotPinAction, input),
+    pinMove: (input) => ipcRenderer.send(IPC.screenshotPinMove, input),
+    pinZoom: (input) => ipcRenderer.invoke(IPC.screenshotPinZoom, input)
   }
 }
 

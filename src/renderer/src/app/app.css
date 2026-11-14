@@ -316,6 +316,12 @@
   font-size: 11px;
 }
 
+.topbar__capture {
+  flex: 0 0 auto;
+  margin-right: -2px;
+  -webkit-app-region: no-drag;
+}
+
 .save-state {
   display: inline-flex;
   align-items: center;
