@@ -227,9 +227,27 @@ function isOverlaySender(sender: WebContents): boolean {
 
 function focusActiveOverlay(target: CaptureSession): void {
   const overlay = target.overlays.get(target.activeDisplayId)
-  if (!overlay || overlay.isDestroyed()) return
-  overlay.show()
+  if (!overlay || overlay.isDestroyed() || !overlay.isVisible()) return
   overlay.focus()
+  overlay.setAlwaysOnTop(true, 'screen-saver')
+}
+
+function revealOverlay(
+  target: CaptureSession,
+  displayId: number,
+  overlay: BrowserWindow
+): void {
+  if (overlay.isDestroyed() || target.closing) return
+  if (!overlay.isVisible()) {
+    if (displayId === target.activeDisplayId) {
+      overlay.show()
+      overlay.focus()
+    } else {
+      overlay.showInactive()
+    }
+  } else if (displayId === target.activeDisplayId) {
+    overlay.focus()
+  }
   overlay.setAlwaysOnTop(true, 'screen-saver')
 }
 
@@ -286,16 +304,13 @@ function createOverlayWindow(target: CaptureSession, frozen: FrozenDisplay): Bro
     }
   })
 
-  overlay.once('ready-to-show', () => {
-    if (overlay.isDestroyed() || target.closing) return
-    if (frozen.info.id === target.activeDisplayId) {
-      overlay.show()
-      overlay.focus()
-    } else {
-      overlay.showInactive()
-    }
-    overlay.setAlwaysOnTop(true, 'screen-saver')
-  })
+  // The renderer asks to reveal itself once the frozen frame is painted.
+  // Do not show the window on ready-to-show: that exposes the dark loading
+  // surface for a moment, which looks like the screen flashing.
+  const revealFallback = setTimeout(() => {
+    revealOverlay(target, frozen.info.id, overlay)
+  }, 1500)
+  overlay.once('closed', () => clearTimeout(revealFallback))
 
   overlay.webContents.on('did-fail-load', (_event, _code, description) => {
     console.error('[workbench] screenshot overlay failed to load:', description)
@@ -485,10 +500,6 @@ export async function startScreenshot(): Promise<OpenResult> {
       closeSession(created)
       return { ok: false, message: '无法打开截图窗口，请稍后重试。' }
     }
-
-    setTimeout(() => {
-      if (session === created) focusActiveOverlay(created)
-    }, 140)
 
     return { ok: true }
   } catch (error) {
@@ -796,6 +807,16 @@ export function registerScreenshotIpc(deps: {
       if (id === displayId) continue
       if (!overlay.isDestroyed()) overlay.destroy()
     }
+  })
+
+  ipcMain.on(IPC.screenshotOverlayReady, (event, payload) => {
+    const input = objectOf(payload)
+    const sessionId = stringOf(input?.['sessionId'], 100)
+    const displayId = numberOf(input?.['displayId'])
+    if (!sessionId || displayId === null) return
+    const current = requireOverlay(event.sender, sessionId, displayId)
+    if (!current) return
+    revealOverlay(current.current, displayId, current.overlay)
   })
 
   ipcMain.handle(IPC.screenshotFinish, async (event, payload) => {

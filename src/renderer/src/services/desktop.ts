@@ -96,6 +96,9 @@ export const screenshotBridge = {
   lockDisplay(sessionId: string, displayId: number): void {
     bridge().screenshot.lockDisplay(sessionId, displayId)
   },
+  overlayReady(sessionId: string, displayId: number): void {
+    bridge().screenshot.overlayReady(sessionId, displayId)
+  },
   finish(input: ScreenshotFinishInput): Promise<ScreenshotActionResult> {
     return bridge().screenshot.finish(input)
   },

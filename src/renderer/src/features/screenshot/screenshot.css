@@ -92,6 +92,67 @@ html.window-pin body {
   border-color: rgba(137, 208, 158, 0.95);
 }
 
+.shot-handles {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+}
+
+.shot-handle {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border: 0;
+  background: transparent;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.shot-handle::after {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 7px;
+  height: 7px;
+  border: 1px solid #3b5f49;
+  border-radius: 50%;
+  background: #f1f7f2;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.7),
+    0 1px 3px rgba(0, 0, 0, 0.35);
+  content: "";
+  transform: translate(-50%, -50%);
+  transition:
+    background 120ms var(--ease-out),
+    transform 120ms var(--ease-out);
+}
+
+.shot-handle:hover::after {
+  background: #e9f1eb;
+  transform: translate(-50%, -50%) scale(1.15);
+}
+
+.shot-handle--n,
+.shot-handle--s {
+  cursor: ns-resize;
+}
+
+.shot-handle--e,
+.shot-handle--w {
+  cursor: ew-resize;
+}
+
+.shot-handle--nw,
+.shot-handle--se {
+  cursor: nwse-resize;
+}
+
+.shot-handle--ne,
+.shot-handle--sw {
+  cursor: nesw-resize;
+}
+
 .shot-size {
   position: absolute;
   z-index: 4;
@@ -188,25 +249,26 @@ html.window-pin body {
   display: flex;
   align-items: center;
   gap: 5px;
-  height: 24px;
-  margin-top: 4px;
+  height: 16px;
+  margin-top: 6px;
   padding: 0 6px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 4px;
-  background: rgba(9, 14, 11, 0.82);
-  box-shadow: 0 6px 16px -10px rgba(0, 0, 0, 0.9);
-  color: #eef5ef;
-  font-family: var(--font-mono);
+  color: rgba(238, 245, 239, 0.8);
+  font-family: var(--font-sans);
   font-size: 10.5px;
-  line-height: 1;
-  backdrop-filter: blur(8px) saturate(1.1);
+  font-weight: 500;
+  line-height: 16px;
+  letter-spacing: 0.01em;
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.75),
+    0 0 6px rgba(0, 0, 0, 0.45);
+  white-space: nowrap;
   pointer-events: none;
 }
 
 .shot-magnifier__swatch {
   flex: none;
-  width: 13px;
-  height: 13px;
+  width: 14px;
+  height: 14px;
   border: 1px solid rgba(255, 255, 255, 0.55);
   border-radius: 3px;
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.18);
@@ -216,9 +278,13 @@ html.window-pin body {
   flex: 1;
   min-width: 0;
   overflow: hidden;
-  color: #eef5ef;
+  color: inherit;
+  font-family: inherit;
+  font-size: 10.5px;
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.01em;
+  line-height: 16px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -227,7 +293,7 @@ html.window-pin body {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  margin-top: 6px;
+  margin-top: 2px;
   padding: 0 6px;
   color: rgba(238, 245, 239, 0.8);
   font-family: var(--font-sans);

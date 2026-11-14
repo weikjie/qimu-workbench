@@ -60,9 +60,21 @@ function isShapeTool(tool: ScreenshotTool): tool is ShapeTool {
   return SHAPE_TOOLS.has(tool)
 }
 
+const MIN_SELECTION_SIZE = 6
+const HANDLE_SIZE = 14
+const RESIZE_HANDLES = ['nw', 'n', 'ne', 'w', 'e', 'sw', 's', 'se'] as const
+type ResizeHandle = (typeof RESIZE_HANDLES)[number]
+
 type DragState =
   | { kind: 'select'; pointerId: number; start: ScreenshotPoint }
   | { kind: 'draw'; pointerId: number; start: ScreenshotPoint }
+  | {
+      kind: 'resize'
+      pointerId: number
+      handle: ResizeHandle
+      start: ScreenshotPoint
+      startSelection: ScreenshotRect
+    }
 
 interface TextEditorState {
   id: number
@@ -131,6 +143,56 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max)
 }
 
+function resizeSelection(
+  startSelection: ScreenshotRect,
+  handle: ResizeHandle,
+  start: ScreenshotPoint,
+  point: ScreenshotPoint,
+  viewport: { width: number; height: number }
+): ScreenshotRect {
+  const dx = point.x - start.x
+  const dy = point.y - start.y
+  const right = startSelection.x + startSelection.width
+  const bottom = startSelection.y + startSelection.height
+  let left = startSelection.x
+  let top = startSelection.y
+  let nextRight = right
+  let nextBottom = bottom
+
+  if (handle.includes('w')) left = clamp(startSelection.x + dx, 0, right - MIN_SELECTION_SIZE)
+  if (handle.includes('e')) {
+    nextRight = clamp(right + dx, left + MIN_SELECTION_SIZE, viewport.width)
+  }
+  if (handle.includes('n')) top = clamp(startSelection.y + dy, 0, bottom - MIN_SELECTION_SIZE)
+  if (handle.includes('s')) {
+    nextBottom = clamp(bottom + dy, top + MIN_SELECTION_SIZE, viewport.height)
+  }
+
+  return {
+    x: left,
+    y: top,
+    width: nextRight - left,
+    height: nextBottom - top
+  }
+}
+
+function handleStyle(
+  selection: ScreenshotRect,
+  handle: ResizeHandle,
+  viewport: { width: number; height: number }
+): CSSProperties {
+  let x = selection.x + selection.width / 2
+  let y = selection.y + selection.height / 2
+  if (handle.includes('w')) x = selection.x
+  else if (handle.includes('e')) x = selection.x + selection.width
+  if (handle.includes('n')) y = selection.y
+  else if (handle.includes('s')) y = selection.y + selection.height
+  return {
+    left: Math.round(clamp(x - HANDLE_SIZE / 2, 0, Math.max(0, viewport.width - HANDLE_SIZE))),
+    top: Math.round(clamp(y - HANDLE_SIZE / 2, 0, Math.max(0, viewport.height - HANDLE_SIZE)))
+  }
+}
+
 export function ScreenshotOverlay({
   sessionId,
   displayId
@@ -146,6 +208,8 @@ export function ScreenshotOverlay({
   const annotationsRef = useRef<Annotation[]>([])
   const textDraftRef = useRef<TextEditorState | null>(null)
   const textSessionRef = useRef(0)
+  const readySentRef = useRef(false)
+  const screenImageRef = useRef<HTMLImageElement | null>(null)
 
   const [context, setContext] = useState<ScreenshotOverlayContext | null>(null)
   const [image, setImage] = useState<HTMLImageElement | null>(null)
@@ -168,6 +232,12 @@ export function ScreenshotOverlay({
   const [cursor, setCursor] = useState<ScreenshotPoint | null>(null)
 
   const valid = Boolean(sessionId) && Number.isFinite(displayId)
+
+  const notifyOverlayReady = useCallback(() => {
+    if (readySentRef.current) return
+    readySentRef.current = true
+    screenshotBridge.overlayReady(sessionId, displayId)
+  }, [displayId, sessionId])
 
   useEffect(() => {
     document.title = '截图'
@@ -219,6 +289,20 @@ export function ScreenshotOverlay({
       }
     }
   }, [])
+
+  // Keep the fullscreen overlays hidden until the frozen frame is ready;
+  // showing them earlier reveals the dark loading surface as a screen flash.
+  useEffect(() => {
+    if (!loadError) return
+    const timer = window.setTimeout(notifyOverlayReady, 0)
+    return () => window.clearTimeout(timer)
+  }, [loadError, notifyOverlayReady])
+
+  useEffect(() => {
+    if (!image || !imageUrl || !screenImageRef.current?.complete) return
+    const timer = window.setTimeout(notifyOverlayReady, 0)
+    return () => window.clearTimeout(timer)
+  }, [image, imageUrl, notifyOverlayReady])
 
   const updateAnnotations = useCallback((next: Annotation[]) => {
     annotationsRef.current = next
@@ -431,13 +515,20 @@ export function ScreenshotOverlay({
         return
       }
 
+      if (drag.kind === 'resize') {
+        setSelection(
+          resizeSelection(drag.startSelection, drag.handle, drag.start, point, viewport)
+        )
+        return
+      }
+
       const current = draftRef.current
       if (!current) return
       const next = withDraftEnd(current, point)
       draftRef.current = next
       setDraft(next)
     },
-    [phase, pointFromEvent]
+    [phase, pointFromEvent, viewport]
   )
 
   const handlePointerEnter = useCallback(
@@ -445,6 +536,29 @@ export function ScreenshotOverlay({
       if (phase === 'select' && !dragRef.current) setCursor(pointFromEvent(event))
     },
     [phase, pointFromEvent]
+  )
+
+  const beginResize = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>, handle: ResizeHandle) => {
+      if (phase !== 'annotate' || !selection || busy) return
+      event.preventDefault()
+      event.stopPropagation()
+      if (textDraftRef.current) commitText()
+      const point = pointFromEvent(event)
+      dragRef.current = {
+        kind: 'resize',
+        pointerId: event.pointerId,
+        handle,
+        start: point,
+        startSelection: { ...selection }
+      }
+      try {
+        event.currentTarget.setPointerCapture(event.pointerId)
+      } catch {
+        // Pointer capture is best-effort.
+      }
+    },
+    [busy, commitText, phase, pointFromEvent, selection]
   )
 
   const finishPointer = useCallback(
@@ -465,7 +579,7 @@ export function ScreenshotOverlay({
         }
         const point = pointFromEvent(event)
         const rect = normalizeRect(drag.start, point)
-        if (rect.width >= 6 && rect.height >= 6) {
+        if (rect.width >= MIN_SELECTION_SIZE && rect.height >= MIN_SELECTION_SIZE) {
           setSelection(rect)
           setPhase('annotate')
           setToolbarPos(null)
@@ -473,6 +587,11 @@ export function ScreenshotOverlay({
         } else {
           setSelection(null)
         }
+        return
+      }
+
+      if (drag.kind === 'resize') {
+        if (canceled) setSelection({ ...drag.startSelection })
         return
       }
 
@@ -743,7 +862,14 @@ export function ScreenshotOverlay({
       onPointerCancel={(event) => finishPointer(event, true)}
       onContextMenu={(event) => event.preventDefault()}
     >
-      <img className="shot-screen" src={imageUrl} alt="" draggable={false} />
+      <img
+        ref={screenImageRef}
+        className="shot-screen"
+        src={imageUrl}
+        alt=""
+        draggable={false}
+        onLoad={notifyOverlayReady}
+      />
 
       {dimStyles.map((style, index) => (
         <div key={index} className="shot-dim" style={style} />
@@ -765,6 +891,19 @@ export function ScreenshotOverlay({
       {sizeChipStyle ? (
         <div className="shot-size" style={sizeChipStyle}>
           {outputWidth} × {outputHeight}
+        </div>
+      ) : null}
+
+      {phase === 'annotate' && selection && !busy ? (
+        <div className="shot-handles" aria-hidden="true">
+          {RESIZE_HANDLES.map((handle) => (
+            <div
+              key={handle}
+              className={cn('shot-handle', 'shot-ui', `shot-handle--${handle}`)}
+              style={handleStyle(selection, handle, viewport)}
+              onPointerDown={(event) => beginResize(event, handle)}
+            />
+          ))}
         </div>
       ) : null}
 

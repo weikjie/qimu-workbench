@@ -13,10 +13,10 @@ const LENS_GAP = 18
 /** Safe distance from the window edges. */
 const LENS_MARGIN = 12
 /** Space between the lens and the color row. */
-const COLOR_ROW_GAP = 4
-const COLOR_ROW_HEIGHT = 24
+const COLOR_ROW_GAP = 6
+const COLOR_ROW_HEIGHT = 16
 /** Space between the color row and the shortcut hints. */
-const HINTS_GAP = 6
+const HINTS_GAP = 2
 const HINT_LINE_HEIGHT = 16
 const HINT_LINES = 2
 const PANEL_WIDTH = LENS_WIDTH

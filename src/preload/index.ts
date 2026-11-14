@@ -46,6 +46,8 @@ const api: WorkbenchApi = {
       ipcRenderer.invoke(IPC.screenshotOverlayContext, { sessionId, displayId }),
     lockDisplay: (sessionId, displayId) =>
       ipcRenderer.send(IPC.screenshotLockDisplay, { sessionId, displayId }),
+    overlayReady: (sessionId, displayId) =>
+      ipcRenderer.send(IPC.screenshotOverlayReady, { sessionId, displayId }),
     finish: (input) => ipcRenderer.invoke(IPC.screenshotFinish, input),
     cancel: (sessionId) => ipcRenderer.send(IPC.screenshotCancel, { sessionId }),
     copyText: (text) => ipcRenderer.invoke(IPC.screenshotCopyText, { text }),

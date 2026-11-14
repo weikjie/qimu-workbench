@@ -39,6 +39,7 @@ export const IPC = {
   screenshotShortcut: 'screenshot:shortcut',
   screenshotOverlayContext: 'screenshot:overlay-context',
   screenshotLockDisplay: 'screenshot:lock-display',
+  screenshotOverlayReady: 'screenshot:overlay-ready',
   screenshotFinish: 'screenshot:finish',
   screenshotCancel: 'screenshot:cancel',
   screenshotCopyText: 'screenshot:copy-text',
@@ -98,6 +99,8 @@ export interface WorkbenchApi {
     ): Promise<ScreenshotOverlayContext | null>
     /** Closes the overlays on every other display once a selection starts. */
     lockDisplay(sessionId: string, displayId: number): void
+    /** Tells the main process the frozen frame is painted and can be shown. */
+    overlayReady(sessionId: string, displayId: number): void
     /** Copies, saves or pins the annotated selection. */
     finish(input: ScreenshotFinishInput): Promise<ScreenshotActionResult>
     /** Cancels the whole capture and closes every overlay. */
